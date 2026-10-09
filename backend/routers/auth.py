@@ -1,4 +1,4 @@
-"""Router de autenticación — docente y grupos"""
+﻿"""Router de autenticación — docente y grupos"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -26,7 +26,7 @@ def login_docente(
     if not docente or not verify_password(form.password, docente.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales incorrectas")
 
-    token = create_token({"sub": docente.id, "role": "docente"})
+    token = create_token({"sub": docente.username, "role": "docente"})
     return {"access_token": token, "token_type": "bearer", "role": "docente", "nombre": docente.nombre}
 
 
@@ -36,7 +36,7 @@ def login_grupo(body: GrupoLoginIn, db: Session = Depends(get_db)):
     if not grupo:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Código de acceso inválido")
 
-    token = create_token({"sub": grupo.id, "role": "grupo"})
+    token = create_token({"sub": grupo.codigo_acceso, "role": "grupo"})
     return {
         "access_token": token,
         "token_type": "bearer",
