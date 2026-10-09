@@ -47,7 +47,7 @@ def get_current_docente(
     payload = decode_token(token) if token else None
     if not payload or payload.get("role") != "docente":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autorizado")
-    docente = db.query(Docente).filter(Docente.id == payload.get("sub")).first()
+    docente = db.query(Docente).filter(Docente.username == payload.get("sub")).first()
     if not docente:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Docente no encontrado")
     return docente
@@ -60,7 +60,7 @@ def get_current_grupo(
     payload = decode_token(token) if token else None
     if not payload or payload.get("role") != "grupo":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autorizado")
-    grupo = db.query(Grupo).filter(Grupo.id == payload.get("sub")).first()
+    grupo = db.query(Grupo).filter(Grupo.codigo_acceso == payload.get("sub")).first()
     if not grupo:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Grupo no encontrado")
     return grupo
@@ -76,7 +76,7 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autorizado")
     role = payload.get("role")
     if role == "docente":
-        return db.query(Docente).filter(Docente.id == payload.get("sub")).first()
+        return db.query(Docente).filter(Docente.username == payload.get("sub")).first()
     elif role == "grupo":
-        return db.query(Grupo).filter(Grupo.id == payload.get("sub")).first()
+        return db.query(Grupo).filter(Grupo.codigo_acceso == payload.get("sub")).first()
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")

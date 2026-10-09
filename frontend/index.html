@@ -282,7 +282,7 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── Configuración ──────────────────────────────────────────────────────────
-const API_BASE = window.SIMULADOR_API_URL || "https://simulador-unicen.onrender.com";
+const API_BASE = window.SIMULADOR_API_URL || "https://simulador-cartera-v2.onrender.com";
 
 // ── API helper ─────────────────────────────────────────────────────────────
 async function api(method, path, body, token) {
@@ -985,7 +985,9 @@ function PanelDocente({ token }) {
         body: form,
       });
       const data = await res.json();
-      flash("success", `${data.creados} alumnos cargados.${data.errores.length ? " Errores: " + data.errores.join("; ") : ""}`);
+      if (!res.ok) throw new Error(data.detail || `Error ${res.status}`);
+      const errs = data.errores || [];
+      flash("success", `${data.creados} alumnos cargados.${errs.length ? " Errores: " + errs.join("; ") : ""}`);
       const al = await api("GET", "/api/docente/alumnos", null, token);
       setAlumnos(al);
     } catch (e) { flash("error", e.message); }
