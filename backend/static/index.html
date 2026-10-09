@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador de Cartera — FCE UNICEN</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    /* ── Tokens de diseño ─────────────────────────────────────────── */
+    :root {
+      --azul:    #1452EF;
+      --fondo:   #E7EAF1;
+      --texto:   #282828;
+      --blanco:  #ffffff;
+      --gris:    #6b7280;
+      --verde:   #16a34a;
+      --rojo:    #dc2626;
+      --naranja: #d97706;
+      --sombra:  0 1px 3px rgba(0,0,0,.12);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Gantari', Arial, sans-serif;
+      background: var(--fondo);
+      color: var(--texto);
+      min-height: 100vh;
+    }
+    /* Nav */
+    .nav {
+      background: var(--azul);
+      color: var(--blanco);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      height: 56px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+    .nav-brand { font-size: 16px; font-weight: 700; letter-spacing: .5px; }
+    .nav-right { display: flex; align-items: center; gap: 16px; font-size: 13px; }
+    .nav-tabs { display: flex; gap: 4px; }
+    .tab-btn {
+      background: transparent;
+      color: rgba(255,255,255,.75);
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all .15s;
+    }
+    .tab-btn:hover { background: rgba(255,255,255,.12); color: var(--blanco); }
+    .tab-btn.active { background: rgba(255,255,255,.22); color: var(--blanco); font-weight: 700; }
+    .btn-logout {
+      background: rgba(255,255,255,.15);
+      color: var(--blanco);
+      border: 1px solid rgba(255,255,255,.3);
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    /* Layout */
+    .page { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+    /* Cards */
+    .card {
+      background: var(--blanco);
+      border-radius: 12px;
+      box-shadow: var(--sombra);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card-title { font-size: 15px; font-weight: 700; margin-bottom: 14px; color: var(--azul); }
+    /* KPI row */
+    .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .kpi {
+      background: var(--blanco);
+      border-radius: 10px;
+      padding: 14px 18px;
+      flex: 1 1 160px;
+      box-shadow: var(--sombra);
+    }
+    .kpi-label { font-size: 11px; color: var(--gris); text-transform: uppercase; margin-bottom: 4px; }
+    .kpi-value { font-size: 20px; font-weight: 700; }
+    .kpi-value.pos { color: var(--verde); }
+    .kpi-value.neg { color: var(--rojo); }
+    /* Tablas */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 10px; font-size: 11px; text-transform: uppercase; color: var(--gris); border-bottom: 2px solid var(--fondo); }
+    td { padding: 10px 10px; border-bottom: 1px solid #f0f0f0; }
+    tr:hover td { background: #f8f9ff; }
+    .pos { color: var(--verde); font-weight: 600; }
+    .neg { color: var(--rojo); font-weight: 600; }
+    /* Botones */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 18px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary { background: var(--azul); color: var(--blanco); }
+    .btn-success { background: var(--verde); color: var(--blanco); }
+    .btn-danger  { background: var(--rojo);  color: var(--blanco); }
+    .btn-outline { background: transparent; color: var(--azul); border: 1.5px solid var(--azul); }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+    /* Formularios */
+    input, select, textarea {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .15s;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--azul); }
+    .form-group { margin-bottom: 14px; }
+    .form-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 5px; color: var(--gris); text-transform: uppercase; }
+    /* Alertas */
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+    .alert-warning { background: #fffbeb; border: 1.5px solid #fbbf24; color: #92400e; }
+    .alert-error   { background: #fef2f2; border: 1.5px solid #fca5a5; color: #7f1d1d; }
+    .alert-success { background: #f0fdf4; border: 1.5px solid #86efac; color: #14532d; }
+    .alert-info    { background: #eff6ff; border: 1.5px solid #93c5fd; color: #1e3a8a; }
+    /* Badge perfil */
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-conservador { background: #dbeafe; color: #1e40af; }
+    .badge-moderado    { background: #fef3c7; color: #92400e; }
+    .badge-agresivo    { background: #fee2e2; color: #991b1b; }
+    /* Login */
+    .login-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .login-card {
+      background: var(--blanco);
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.12);
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+    }
+    .login-logo {
+      width: 56px;
+      height: 56px;
+      background: var(--azul);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 26px;
+    }
+    .login-title { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+    .login-sub { color: var(--gris); font-size: 13px; margin-bottom: 28px; }
+    /* Encuesta */
+    .pregunta-card {
+      background: var(--blanco);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: var(--sombra);
+      margin-bottom: 20px;
+    }
+    .pregunta-num { font-size: 11px; font-weight: 700; color: var(--azul); margin-bottom: 6px; text-transform: uppercase; }
+    .pregunta-texto { font-size: 15px; font-weight: 600; margin-bottom: 14px; line-height: 1.4; }
+    .opcion {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .opcion:hover { border-color: var(--azul); background: #eff6ff; }
+    .opcion.selected { border-color: var(--azul); background: #eff6ff; }
+    .opcion input[type=radio] { margin-top: 2px; accent-color: var(--azul); }
+    /* Noticia */
+    .noticia-card {
+      border-left: 4px solid var(--azul);
+      padding: 14px 16px;
+      background: var(--blanco);
+      border-radius: 0 10px 10px 0;
+      margin-bottom: 12px;
+      box-shadow: var(--sombra);
+    }
+    .noticia-card.fundamental { border-color: var(--azul); }
+    .noticia-card.tecnico { border-color: var(--naranja); }
+    .noticia-tipo { font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
+    .noticia-titulo { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+    .noticia-contenido { font-size: 13px; color: var(--gris); line-height: 1.5; }
+    .noticia-meta { font-size: 11px; color: #9ca3af; margin-top: 8px; }
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.45);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000; padding: 16px;
+    }
+    .modal {
+      background: var(--blanco);
+      border-radius: 14px;
+      padding: 28px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 8px 40px rgba(0,0,0,.2);
+    }
+    .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* Ranking */
+    .ranking-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+    .ranking-pos { font-size: 20px; font-weight: 800; width: 32px; text-align: center; color: var(--azul); }
+    .ranking-pos.gold { color: #d97706; }
+    .ranking-pos.silver { color: #6b7280; }
+    .ranking-pos.bronze { color: #92400e; }
+    .ranking-nombre { flex: 1; font-weight: 600; }
+    .ranking-rend { font-size: 15px; font-weight: 700; }
+    /* Ticker */
+    .fila-instrumento {
+      cursor: pointer;
+    }
+    .fila-instrumento.selected td { background: #eff6ff; }
+    /* Panel docente */
+    .panel-section { margin-bottom: 32px; }
+    .panel-section-title {
+      font-size: 13px; font-weight: 700; text-transform: uppercase;
+      color: var(--gris); margin-bottom: 12px;
+      padding-bottom: 6px; border-bottom: 2px solid var(--fondo);
+    }
+    /* Responsive */
+    @media (max-width: 600px) {
+      .kpi { flex: 1 1 100%; }
+      .nav-tabs { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ── Configuración ──────────────────────────────────────────────────────────
+const API_BASE = window.SIMULADOR_API_URL || "https://simulador-cartera-v2.onrender.com";
+
+// ── API helper ─────────────────────────────────────────────────────────────
+async function api(method, path, body, token) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Error de red");
+  }
+  return res.json();
+}
+
+function fmt(n) {
+  return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 2 }).format(n);
+}
+function fmtPct(n) {
+  const sign = n >= 0 ? "+" : "";
+  return `${sign}${n.toFixed(2)}%`;
+}
+function fmtFecha(iso) {
+  return new Date(iso).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// ── LOGIN ──────────────────────────────────────────────────────────────────
+function LoginPage({ onLogin }) {
+  const [modo, setModo] = useState("grupo"); // grupo | docente
+  const [codigo, setCodigo] = useState("");
+  const [user, setUser] = useState("");
+  const [pass, setPass] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    try {
+      let data;
+      if (modo === "grupo") {
+        data = await api("POST", "/api/auth/grupo/login", { codigo_acceso: codigo });
+      } else {
+        const form = new URLSearchParams();
+        form.append("username", user);
+        form.append("password", pass);
+        const res = await fetch(`${API_BASE}/api/auth/docente/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: form,
+        });
+        if (!res.ok) throw new Error("Credenciales incorrectas");
+        data = await res.json();
+      }
+      onLogin(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="login-wrap">
+      <div className="login-card">
+        <div className="login-logo">📊</div>
+        <div className="login-title">Simulador de Cartera</div>
+        <div className="login-sub">FCE · UNICEN · Tandil</div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+          <button className={`btn ${modo === "grupo" ? "btn-primary" : "btn-outline"}`} style={{ flex: 1 }}
+            onClick={() => setModo("grupo")}>Soy grupo</button>
+          <button className={`btn ${modo === "docente" ? "btn-primary" : "btn-outline"}`} style={{ flex: 1 }}
+            onClick={() => setModo("docente")}>Soy docente</button>
+        </div>
+
+        {error && <div className="alert alert-error">{error}</div>}
+
+        <form onSubmit={handleLogin}>
+          {modo === "grupo" ? (
+            <div className="form-group">
+              <label className="form-label">Código de acceso del grupo</label>
+              <input
+                value={codigo}
+                onChange={e => setCodigo(e.target.value.toUpperCase())}
+                placeholder="Ej: GRP-01"
+                autoFocus
+              />
+            </div>
+          ) : (
+            <>
+              <div className="form-group">
+                <label className="form-label">Usuario</label>
+                <input value={user} onChange={e => setUser(e.target.value)} placeholder="docente" autoFocus />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Contraseña</label>
+                <input type="password" value={pass} onChange={e => setPass(e.target.value)} />
+              </div>
+            </>
+          )}
+          <button className="btn btn-primary" style={{ width: "100%", marginTop: 8 }} disabled={loading}>
+            {loading && <span className="spinner" />}
+            {loading ? "Ingresando..." : "Ingresar"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── ENCUESTA PERFIL DE RIESGO ──────────────────────────────────────────────
+function EncuestaPage({ token, onComplete }) {
+  const [preguntas, setPreguntas] = useState([]);
+  const [respuestas, setRespuestas] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [enviando, setEnviando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+
+  useEffect(() => {
+    api("GET", "/api/grupos/encuesta/preguntas", null, token)
+      .then(setPreguntas)
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  async function enviar() {
+    if (Object.keys(respuestas).length < preguntas.length) {
+      alert("Respondé todas las preguntas antes de continuar.");
+      return;
+    }
+    setEnviando(true);
+    try {
+      const data = await api("POST", "/api/grupos/encuesta", { respuestas }, token);
+      setResultado(data);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  const LABELS = { conservador: "Conservador", moderado: "Moderado", agresivo: "Agresivo" };
+  const DESCRIP = {
+    conservador: "Priorizás preservar el capital. Se recomienda operar activos de baja volatilidad y mantener una exposición concentrada moderada.",
+    moderado: "Buscás un equilibrio entre rendimiento y riesgo. Podés operar la mayoría de los activos disponibles.",
+    agresivo: "Aceptás alta volatilidad en busca de mayores retornos. No tenés restricciones de operación.",
+  };
+
+  if (loading) return <div className="page"><div className="card">Cargando encuesta...</div></div>;
+
+  if (resultado) {
+    return (
+      <div className="page">
+        <div className="card" style={{ textAlign: "center", padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>
+            Tu perfil: <span className={`badge badge-${resultado.perfil}`}>{LABELS[resultado.perfil]}</span>
+          </div>
+          <p style={{ color: "var(--gris)", fontSize: 14, maxWidth: 400, margin: "12px auto 24px" }}>
+            {DESCRIP[resultado.perfil]}
+          </p>
+          <button className="btn btn-primary" onClick={() => onComplete(resultado.perfil)}>
+            Ir al simulador →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const completadas = Object.keys(respuestas).length;
+  const progreso = preguntas.length > 0 ? (completadas / preguntas.length) * 100 : 0;
+
+  return (
+    <div className="page">
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>Encuesta de perfil de riesgo</h2>
+        <p style={{ color: "var(--gris)", fontSize: 13 }}>
+          Respondé las siguientes preguntas para determinar el perfil inversor de tu grupo.
+        </p>
+        <div style={{ marginTop: 12, background: "#e5e7eb", borderRadius: 8, height: 6 }}>
+          <div style={{ background: "var(--azul)", height: 6, borderRadius: 8, width: `${progreso}%`, transition: "width .3s" }} />
+        </div>
+        <p style={{ fontSize: 11, color: "var(--gris)", marginTop: 4 }}>{completadas} de {preguntas.length} respondidas</p>
+      </div>
+
+      {preguntas.map(p => (
+        <div key={p.num} className="pregunta-card">
+          <div className="pregunta-num">Pregunta {p.num}</div>
+          <div className="pregunta-texto">{p.texto}</div>
+          {Object.entries(p.opciones).map(([letra, op]) => (
+            <label key={letra} className={`opcion ${respuestas[p.num] === letra ? "selected" : ""}`}>
+              <input
+                type="radio"
+                name={`q${p.num}`}
+                value={letra}
+                checked={respuestas[p.num] === letra}
+                onChange={() => setRespuestas(r => ({ ...r, [p.num]: letra }))}
+              />
+              <span>{op.texto}</span>
+            </label>
+          ))}
+        </div>
+      ))}
+
+      <button className="btn btn-primary" style={{ width: "100%" }} onClick={enviar} disabled={enviando}>
+        {enviando && <span className="spinner" />}
+        {enviando ? "Calculando perfil..." : "Completar encuesta"}
+      </button>
+    </div>
+  );
+}
+
+// ── MI CARTERA ─────────────────────────────────────────────────────────────
+function MiCartera({ token, perfil }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const cargar = useCallback(async () => {
+    try {
+      const d = await api("GET", "/api/grupos/cartera", null, token);
+      setData(d);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [token]);
+
+  useEffect(() => { cargar(); const id = setInterval(cargar, 15000); return () => clearInterval(id); }, [cargar]);
+
+  if (loading) return <div className="page"><div className="card">Cargando cartera...</div></div>;
+  if (!data) return <div className="page"><div className="alert alert-error">Error al cargar cartera.</div></div>;
+
+  const rend = data.rendimiento_pct;
+
+  return (
+    <div className="page">
+      <div className="kpi-row">
+        <div className="kpi">
+          <div className="kpi-label">Efectivo disponible</div>
+          <div className="kpi-value">{fmt(data.capital_disponible)}</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Valor de cartera</div>
+          <div className="kpi-value">{fmt(data.valor_cartera)}</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Capital total</div>
+          <div className="kpi-value">{fmt(data.capital_total)}</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Rendimiento</div>
+          <div className={`kpi-value ${rend >= 0 ? "pos" : "neg"}`}>{fmtPct(rend)}</div>
+        </div>
+      </div>
+
+      {perfil && (
+        <div style={{ marginBottom: 12 }}>
+          <span className={`badge badge-${perfil}`}>{perfil.charAt(0).toUpperCase() + perfil.slice(1)}</span>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-title">Posiciones abiertas</div>
+        {data.posiciones.length === 0 ? (
+          <p style={{ color: "var(--gris)", fontSize: 13 }}>Todavía no tenés posiciones. Ingresá a la pantalla <b>Operar</b> para comprar activos.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Nombre</th>
+                <th style={{ textAlign: "right" }}>Cantidad</th>
+                <th style={{ textAlign: "right" }}>P° prom.</th>
+                <th style={{ textAlign: "right" }}>P° actual</th>
+                <th style={{ textAlign: "right" }}>Valor</th>
+                <th style={{ textAlign: "right" }}>Resultado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.posiciones.map(p => (
+                <tr key={p.ticker}>
+                  <td><b>{p.ticker}</b></td>
+                  <td style={{ color: "var(--gris)" }}>{p.nombre}</td>
+                  <td style={{ textAlign: "right" }}>{p.cantidad}</td>
+                  <td style={{ textAlign: "right" }}>{fmt(p.precio_promedio)}</td>
+                  <td style={{ textAlign: "right" }}>{fmt(p.precio_actual)}</td>
+                  <td style={{ textAlign: "right" }}>{fmt(p.valor_mercado)}</td>
+                  <td style={{ textAlign: "right" }} className={p.resultado >= 0 ? "pos" : "neg"}>
+                    {fmt(p.resultado)} ({fmtPct(p.resultado_pct)})
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── OPERAR ─────────────────────────────────────────────────────────────────
+function Operar({ token, perfil }) {
+  const [mercado, setMercado] = useState([]);
+  const [seleccionado, setSeleccionado] = useState(null);
+  const [tipo, setTipo] = useState("compra");
+  const [cantidad, setCantidad] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [modal, setModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [exito, setExito] = useState(null);
+  const [error, setError] = useState("");
+
+  const cargarMercado = useCallback(async () => {
+    try {
+      const d = await api("GET", "/api/grupos/mercado", null, token);
+      setMercado(d);
+    } catch (e) { console.error(e); }
+  }, [token]);
+
+  useEffect(() => { cargarMercado(); const id = setInterval(cargarMercado, 15000); return () => clearInterval(id); }, [cargarMercado]);
+
+  async function verPreview() {
+    if (!seleccionado || !cantidad || parseInt(cantidad) <= 0) return;
+    setError(""); setLoading(true);
+    try {
+      const data = await api("POST", "/api/grupos/operar/preview", {
+        instrumento_id: seleccionado.id,
+        tipo,
+        cantidad: parseInt(cantidad),
+      }, token);
+      setPreview(data);
+      setModal(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function confirmar() {
+    setLoading(true);
+    try {
+      const data = await api("POST", "/api/grupos/operar", {
+        instrumento_id: seleccionado.id,
+        tipo,
+        cantidad: parseInt(cantidad),
+        confirmar_advertencia: true,
+      }, token);
+      setExito(data);
+      setModal(false);
+      setPreview(null);
+      setCantidad("");
+      setSeleccionado(null);
+      cargarMercado();
+    } catch (e) {
+      setError(e.message);
+      setModal(false);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="page">
+      {exito && (
+        <div className="alert alert-success">
+          ✅ {exito.tipo === "compra" ? "Compra" : "Venta"} ejecutada: {exito.cantidad} {exito.instrumento} @ {fmt(exito.precio)} | Total: {fmt(exito.monto_total)}
+          <button onClick={() => setExito(null)} style={{ float: "right", background: "none", border: "none", cursor: "pointer" }}>✕</button>
+        </div>
+      )}
+      {error && <div className="alert alert-error">{error} <button onClick={() => setError("")} style={{ float: "right", background: "none", border: "none", cursor: "pointer" }}>✕</button></div>}
+
+      <div className="card">
+        <div className="card-title">Instrumentos disponibles</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Nombre</th>
+              <th>Tipo</th>
+              <th style={{ textAlign: "right" }}>Precio</th>
+              <th style={{ textAlign: "right" }}>Variación</th>
+            </tr>
+          </thead>
+          <tbody>
+            {mercado.map(i => (
+              <tr
+                key={i.id}
+                className={`fila-instrumento ${seleccionado?.id === i.id ? "selected" : ""}`}
+                onClick={() => setSeleccionado(i)}
+              >
+                <td><b>{i.ticker}</b></td>
+                <td style={{ color: "var(--gris)" }}>{i.nombre}</td>
+                <td><span className="badge" style={{ background: "#f3f4f6", color: "#374151" }}>{i.tipo}</span></td>
+                <td style={{ textAlign: "right" }}>{fmt(i.precio_actual)}</td>
+                <td style={{ textAlign: "right" }} className={i.variacion_pct >= 0 ? "pos" : "neg"}>
+                  {fmtPct(i.variacion_pct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {seleccionado && (
+        <div className="card">
+          <div className="card-title">Orden — {seleccionado.ticker}</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <button className={`btn ${tipo === "compra" ? "btn-success" : "btn-outline"}`} onClick={() => setTipo("compra")}>Compra</button>
+            <button className={`btn ${tipo === "venta" ? "btn-danger" : "btn-outline"}`} onClick={() => setTipo("venta")}>Venta</button>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Cantidad</label>
+            <input
+              type="number"
+              min="1"
+              value={cantidad}
+              onChange={e => setCantidad(e.target.value)}
+              placeholder="Ej: 100"
+            />
+          </div>
+          {cantidad && parseInt(cantidad) > 0 && (
+            <div className="alert alert-info" style={{ marginBottom: 12 }}>
+              Estimado: {fmt(seleccionado.precio_actual * parseInt(cantidad))} + comisión (0.5%)
+            </div>
+          )}
+          <button className="btn btn-primary" onClick={verPreview} disabled={!cantidad || loading}>
+            {loading && <span className="spinner" />}
+            {tipo === "compra" ? "Confirmar compra" : "Confirmar venta"}
+          </button>
+        </div>
+      )}
+
+      {/* Modal de confirmación */}
+      {modal && preview && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-title">Confirmar operación</div>
+            <table style={{ marginBottom: 12 }}>
+              <tbody>
+                <tr><td style={{ color: "var(--gris)", paddingBottom: 6 }}>Instrumento</td><td style={{ fontWeight: 700, textAlign: "right" }}>{preview.instrumento}</td></tr>
+                <tr><td style={{ color: "var(--gris)", paddingBottom: 6 }}>Tipo</td><td style={{ textAlign: "right", textTransform: "capitalize", color: preview.tipo === "compra" ? "var(--verde)" : "var(--rojo)", fontWeight: 700 }}>{preview.tipo}</td></tr>
+                <tr><td style={{ color: "var(--gris)", paddingBottom: 6 }}>Cantidad</td><td style={{ textAlign: "right" }}>{preview.cantidad}</td></tr>
+                <tr><td style={{ color: "var(--gris)", paddingBottom: 6 }}>Precio</td><td style={{ textAlign: "right" }}>{fmt(preview.precio)}</td></tr>
+                <tr><td style={{ color: "var(--gris)", paddingBottom: 6 }}>Comisión</td><td style={{ textAlign: "right" }}>{fmt(preview.comision)}</td></tr>
+                <tr><td style={{ fontWeight: 700, paddingTop: 6 }}>Total</td><td style={{ fontWeight: 700, textAlign: "right", fontSize: 16 }}>{fmt(preview.monto_total)}</td></tr>
+              </tbody>
+            </table>
+
+            {!preview.coherente_perfil && (
+              <div className="alert alert-warning">{preview.advertencia}</div>
+            )}
+
+            <div className="modal-actions">
+              <button className="btn btn-outline" onClick={() => setModal(false)}>Cancelar</button>
+              <button
+                className={`btn ${preview.tipo === "compra" ? "btn-success" : "btn-danger"}`}
+                onClick={confirmar}
+                disabled={loading}
+              >
+                {loading && <span className="spinner" />}
+                {!preview.coherente_perfil ? "Confirmar igualmente" : "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── NOTICIAS ───────────────────────────────────────────────────────────────
+function Noticias({ token }) {
+  const [noticias, setNoticias] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expandida, setExpandida] = useState(null);
+
+  useEffect(() => {
+    api("GET", "/api/grupos/noticias", null, token)
+      .then(setNoticias)
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  async function marcarLeida(id) {
+    await api("POST", `/api/grupos/noticias/${id}/leer`, null, token);
+    setNoticias(n => n.map(x => x.id === id ? { ...x, leida: true } : x));
+  }
+
+  if (loading) return <div className="page"><div className="card">Cargando noticias...</div></div>;
+
+  const noLeidas = noticias.filter(n => !n.leida);
+  const leidas = noticias.filter(n => n.leida);
+
+  return (
+    <div className="page">
+      {noticias.length === 0 && (
+        <div className="alert alert-info">No hay noticias disponibles por el momento.</div>
+      )}
+
+      {noLeidas.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", color: "var(--gris)", marginBottom: 10 }}>
+            No leídas ({noLeidas.length})
+          </h3>
+          {noLeidas.map(n => (
+            <NoticiaCard key={n.id} noticia={n} expanded={expandida === n.id}
+              onToggle={() => { setExpandida(expandida === n.id ? null : n.id); marcarLeida(n.id); }}
+            />
+          ))}
+        </>
+      )}
+
+      {leidas.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", color: "var(--gris)", marginBottom: 10, marginTop: 20 }}>
+            Leídas ({leidas.length})
+          </h3>
+          {leidas.map(n => (
+            <NoticiaCard key={n.id} noticia={n} expanded={expandida === n.id}
+              onToggle={() => setExpandida(expandida === n.id ? null : n.id)}
+            />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function NoticiaCard({ noticia, expanded, onToggle }) {
+  const tipoColor = noticia.tipo === "fundamental" ? "var(--azul)" : "var(--naranja)";
+  const tipoLabel = noticia.tipo === "fundamental" ? "📰 Análisis fundamental" : "📈 Análisis técnico";
+
+  return (
+    <div className={`noticia-card ${noticia.tipo}`}
+      style={{ opacity: noticia.leida ? 0.75 : 1, cursor: "pointer" }}
+      onClick={onToggle}
+    >
+      <div className="noticia-tipo" style={{ color: tipoColor }}>{tipoLabel}
+        {noticia.ticker_relacionado && <span style={{ marginLeft: 8, background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontSize: 10 }}>{noticia.ticker_relacionado}</span>}
+        {!noticia.leida && <span style={{ marginLeft: 8, background: "var(--azul)", color: "white", padding: "1px 6px", borderRadius: 4, fontSize: 10 }}>NUEVO</span>}
+      </div>
+      <div className="noticia-titulo">{noticia.titulo}</div>
+      {expanded && (
+        <div className="noticia-contenido" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{noticia.contenido}</div>
+      )}
+      <div className="noticia-meta">{fmtFecha(noticia.publicado_en)} · {expanded ? "▲ Cerrar" : "▼ Leer más"}</div>
+    </div>
+  );
+}
+
+// ── RANKING ────────────────────────────────────────────────────────────────
+function Ranking({ token }) {
+  const [ranking, setRanking] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api("GET", "/api/grupos/ranking", null, token)
+      .then(setRanking)
+      .finally(() => setLoading(false));
+    const id = setInterval(() => {
+      api("GET", "/api/grupos/ranking", null, token).then(setRanking);
+    }, 30000);
+    return () => clearInterval(id);
+  }, [token]);
+
+  if (loading) return <div className="page"><div className="card">Cargando ranking...</div></div>;
+
+  const medallaColor = (pos) => pos === 1 ? "gold" : pos === 2 ? "silver" : pos === 3 ? "bronze" : "";
+  const medalla = (pos) => pos === 1 ? "🥇" : pos === 2 ? "🥈" : pos === 3 ? "🥉" : pos;
+
+  return (
+    <div className="page">
+      <div className="card">
+        <div className="card-title">Ranking de grupos</div>
+        {ranking.map(g => (
+          <div key={g.grupo} className="ranking-row">
+            <div className={`ranking-pos ${medallaColor(g.posicion)}`}>{medalla(g.posicion)}</div>
+            <div className="ranking-nombre">{g.grupo}</div>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--gris)" }}>{fmt(g.capital_total)}</div>
+            </div>
+            <div className={`ranking-rend ${g.rendimiento_pct >= 0 ? "pos" : "neg"}`}>
+              {fmtPct(g.rendimiento_pct)}
+            </div>
+          </div>
+        ))}
+        {ranking.length === 0 && <p style={{ color: "var(--gris)", fontSize: 13 }}>Todavía no hay grupos con operaciones.</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── HISTORIAL ──────────────────────────────────────────────────────────────
+function Historial({ token }) {
+  const [ops, setOps] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api("GET", "/api/grupos/operaciones", null, token)
+      .then(setOps)
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  if (loading) return <div className="page"><div className="card">Cargando historial...</div></div>;
+
+  return (
+    <div className="page">
+      <div className="card">
+        <div className="card-title">Historial de operaciones</div>
+        {ops.length === 0 ? (
+          <p style={{ color: "var(--gris)", fontSize: 13 }}>Todavía no realizaste operaciones.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Ticker</th>
+                <th>Tipo</th>
+                <th style={{ textAlign: "right" }}>Cantidad</th>
+                <th style={{ textAlign: "right" }}>Precio</th>
+                <th style={{ textAlign: "right" }}>Total</th>
+                <th>Noticia</th>
+                <th>Perfil</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ops.map(o => (
+                <tr key={o.id}>
+                  <td style={{ fontSize: 12, color: "var(--gris)" }}>{fmtFecha(o.timestamp)}</td>
+                  <td><b>{o.instrumento}</b></td>
+                  <td className={o.tipo === "compra" ? "pos" : "neg"} style={{ textTransform: "capitalize" }}>{o.tipo}</td>
+                  <td style={{ textAlign: "right" }}>{o.cantidad}</td>
+                  <td style={{ textAlign: "right" }}>{fmt(o.precio)}</td>
+                  <td style={{ textAlign: "right" }}>{fmt(o.monto_total)}</td>
+                  <td style={{ fontSize: 11, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {o.noticia || <span style={{ color: "#d1d5db" }}>—</span>}
+                  </td>
+                  <td style={{ textAlign: "center" }}>
+                    {o.advertencia_perfil ? "⚠️" : "✅"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── PANEL DOCENTE ─────────────────────────────────────────────────────────
+function PanelDocente({ token }) {
+  const [tab, setTab] = useState("grupos");
+  const [grupos, setGrupos] = useState([]);
+  const [alumnos, setAlumnos] = useState([]);
+  const [noticias, setNoticias] = useState([]);
+  const [ranking, setRanking] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  // Formularios
+  const [nuevoGrupo, setNuevoGrupo] = useState("");
+  const [nuevaNoticia, setNuevaNot] = useState({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", publicado_en: "" });
+  const [csvFile, setCsvFile] = useState(null);
+  const [msg, setMsg] = useState({ type: "", text: "" });
+
+  // Reporte grupo seleccionado
+  const [reporteGrupo, setReporteGrupo] = useState(null);
+  const [reporteNoticia, setReporteNoticia] = useState(null);
+
+  useEffect(() => {
+    Promise.all([
+      api("GET", "/api/docente/grupos", null, token),
+      api("GET", "/api/docente/alumnos", null, token),
+      api("GET", "/api/docente/noticias", null, token),
+      api("GET", "/api/docente/reportes/ranking", null, token),
+    ]).then(([g, a, n, r]) => { setGrupos(g); setAlumnos(a); setNoticias(n); setRanking(r); });
+  }, [token]);
+
+  function flash(type, text) { setMsg({ type, text }); setTimeout(() => setMsg({ type: "", text: "" }), 4000); }
+
+  async function crearGrupo() {
+    if (!nuevoGrupo.trim()) return;
+    try {
+      const g = await api("POST", "/api/docente/grupos", { nombre: nuevoGrupo }, token);
+      setGrupos(prev => [...prev, g]);
+      setNuevoGrupo("");
+      flash("success", `Grupo "${g.nombre}" creado. Código: ${g.codigo_acceso}`);
+    } catch (e) { flash("error", e.message); }
+  }
+
+  async function subirCSV() {
+    if (!csvFile) return;
+    const form = new FormData();
+    form.append("file", csvFile);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/docente/alumnos/csv`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || `Error ${res.status}`);
+      const errs = data.errores || [];
+      flash("success", `${data.creados} alumnos cargados.${errs.length ? " Errores: " + errs.join("; ") : ""}`);
+      const al = await api("GET", "/api/docente/alumnos", null, token);
+      setAlumnos(al);
+    } catch (e) { flash("error", e.message); }
+    finally { setLoading(false); setCsvFile(null); }
+  }
+
+  async function publicarNoticia() {
+    const { titulo, contenido, tipo, ticker_relacionado, publicado_en } = nuevaNoticia;
+    if (!titulo || !contenido || !publicado_en) {
+      flash("error", "Completá título, contenido y fecha de publicación.");
+      return;
+    }
+    try {
+      await api("POST", "/api/docente/noticias", {
+        titulo, contenido, tipo,
+        ticker_relacionado: ticker_relacionado || null,
+        publicado_en: new Date(publicado_en).toISOString(),
+      }, token);
+      flash("success", "Noticia publicada.");
+      setNuevaNot({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", publicado_en: "" });
+      const n = await api("GET", "/api/docente/noticias", null, token);
+      setNoticias(n);
+    } catch (e) { flash("error", e.message); }
+  }
+
+  async function verReporteGrupo(id) {
+    const r = await api("GET", `/api/docente/reportes/grupo/${id}`, null, token);
+    setReporteGrupo(r);
+  }
+
+  async function verReporteNoticia(id) {
+    const r = await api("GET", `/api/docente/reportes/noticias/${id}`, null, token);
+    setReporteNoticia(r);
+  }
+
+  return (
+    <div className="page">
+      {msg.text && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
+
+      <div className="nav-tabs" style={{ marginBottom: 20, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {["grupos", "alumnos", "noticias", "ranking"].map(t => (
+          <button key={t} className={`btn ${tab === t ? "btn-primary" : "btn-outline"} btn-sm`}
+            onClick={() => setTab(t)} style={{ textTransform: "capitalize" }}>
+            {t === "grupos" ? "👥 Grupos" : t === "alumnos" ? "🎓 Alumnos" : t === "noticias" ? "📰 Noticias" : "🏆 Ranking"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "grupos" && (
+        <>
+          <div className="panel-section">
+            <div className="panel-section-title">Crear grupo</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input value={nuevoGrupo} onChange={e => setNuevoGrupo(e.target.value)}
+                placeholder="Nombre del grupo (ej: Grupo A)" style={{ flex: 1 }}
+                onKeyDown={e => e.key === "Enter" && crearGrupo()}
+              />
+              <button className="btn btn-primary" onClick={crearGrupo}>Crear</button>
+            </div>
+          </div>
+
+          <div className="panel-section">
+            <div className="panel-section-title">Grupos existentes</div>
+            {grupos.map(g => (
+              <div key={g.id} className="card" style={{ padding: "14px 18px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <b>{g.nombre}</b>
+                    <span style={{ marginLeft: 10, fontFamily: "monospace", background: "#f3f4f6", padding: "2px 8px", borderRadius: 6, fontSize: 13, fontWeight: 700 }}>{g.codigo_acceso}</span>
+                    {g.perfil_riesgo && <span className={`badge badge-${g.perfil_riesgo}`} style={{ marginLeft: 8 }}>{g.perfil_riesgo}</span>}
+                  </div>
+                  <button className="btn btn-outline btn-sm" onClick={() => verReporteGrupo(g.id)}>Ver reporte</button>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--gris)", marginTop: 6 }}>
+                  Capital: {fmt(g.capital_total)} · {g.num_operaciones} operaciones · {g.alumnos.length} alumnos
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Modal reporte grupo */}
+          {reporteGrupo && (
+            <div className="modal-overlay" onClick={() => setReporteGrupo(null)}>
+              <div className="modal" style={{ maxWidth: 680, maxHeight: "80vh", overflow: "auto" }} onClick={e => e.stopPropagation()}>
+                <div className="modal-title">📋 Reporte: {reporteGrupo.grupo}</div>
+                <p><b>Alumnos:</b> {reporteGrupo.alumnos.join(", ")}</p>
+                <p style={{ marginTop: 6 }}><b>Perfil:</b> <span className={`badge badge-${reporteGrupo.perfil_riesgo}`}>{reporteGrupo.perfil_riesgo}</span></p>
+                <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+                  {[
+                    ["Capital inicial", fmt(reporteGrupo.capital_inicial)],
+                    ["Capital total", fmt(reporteGrupo.capital_total)],
+                    ["Rendimiento", fmtPct(reporteGrupo.rendimiento_pct)],
+                  ].map(([l, v]) => (
+                    <div key={l} className="kpi" style={{ flex: "1 1 140px", padding: "10px 14px" }}>
+                      <div className="kpi-label">{l}</div>
+                      <div className="kpi-value" style={{ fontSize: 15 }}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+                <h4 style={{ marginTop: 16, marginBottom: 8, fontSize: 13 }}>Operaciones</h4>
+                <table>
+                  <thead><tr><th>Fecha</th><th>Ticker</th><th>Tipo</th><th>Cant.</th><th>Total</th><th>Noticia</th><th>⚠️</th></tr></thead>
+                  <tbody>
+                    {reporteGrupo.operaciones.map((o, i) => (
+                      <tr key={i}>
+                        <td style={{ fontSize: 11 }}>{fmtFecha(o.timestamp)}</td>
+                        <td><b>{o.instrumento}</b></td>
+                        <td className={o.tipo === "compra" ? "pos" : "neg"}>{o.tipo}</td>
+                        <td>{o.cantidad}</td>
+                        <td>{fmt(o.monto_total)}</td>
+                        <td style={{ fontSize: 11, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.noticia || "—"}</td>
+                        <td>{o.advertencia_perfil ? "⚠️" : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="modal-actions">
+                  <button className="btn btn-outline" onClick={() => setReporteGrupo(null)}>Cerrar</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "alumnos" && (
+        <>
+          <div className="panel-section">
+            <div className="panel-section-title">Cargar alumnos via CSV</div>
+            <p style={{ fontSize: 13, color: "var(--gris)", marginBottom: 10 }}>
+              Formato: <code>nombre,apellido,legajo,email</code> (primera fila = encabezado)
+            </p>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="file" accept=".csv" onChange={e => setCsvFile(e.target.files[0])} style={{ flex: 1 }} />
+              <button className="btn btn-primary" onClick={subirCSV} disabled={!csvFile || loading}>
+                {loading ? "Subiendo..." : "Subir"}
+              </button>
+            </div>
+          </div>
+          <div className="panel-section">
+            <div className="panel-section-title">Alumnos ({alumnos.length})</div>
+            <table>
+              <thead><tr><th>Apellido</th><th>Nombre</th><th>Legajo</th><th>Grupo</th></tr></thead>
+              <tbody>
+                {alumnos.map(a => (
+                  <tr key={a.id}>
+                    <td>{a.apellido}</td>
+                    <td>{a.nombre}</td>
+                    <td>{a.legajo}</td>
+                    <td>{a.grupo_nombre || <span style={{ color: "#d1d5db" }}>Sin grupo</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {tab === "noticias" && (
+        <>
+          <div className="panel-section">
+            <div className="panel-section-title">Nueva noticia / análisis</div>
+            <div className="form-group">
+              <label className="form-label">Tipo</label>
+              <select value={nuevaNoticia.tipo} onChange={e => setNuevaNot(p => ({ ...p, tipo: e.target.value }))}>
+                <option value="fundamental">Análisis fundamental</option>
+                <option value="tecnico">Análisis técnico</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Ticker relacionado (opcional)</label>
+              <input value={nuevaNoticia.ticker_relacionado}
+                onChange={e => setNuevaNot(p => ({ ...p, ticker_relacionado: e.target.value.toUpperCase() }))}
+                placeholder="Ej: GGAL" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Título</label>
+              <input value={nuevaNoticia.titulo}
+                onChange={e => setNuevaNot(p => ({ ...p, titulo: e.target.value }))}
+                placeholder="Título de la noticia" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Contenido</label>
+              <textarea value={nuevaNoticia.contenido}
+                onChange={e => setNuevaNot(p => ({ ...p, contenido: e.target.value }))}
+                placeholder="Contenido de la noticia o análisis..."
+                rows={5} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Fecha y hora de publicación</label>
+              <input type="datetime-local"
+                value={nuevaNoticia.publicado_en}
+                onChange={e => setNuevaNot(p => ({ ...p, publicado_en: e.target.value }))} />
+            </div>
+            <button className="btn btn-primary" onClick={publicarNoticia}>Publicar</button>
+          </div>
+
+          <div className="panel-section">
+            <div className="panel-section-title">Noticias publicadas</div>
+            {noticias.map(n => (
+              <div key={n.id} className="card" style={{ padding: "12px 16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <div>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: n.tipo === "fundamental" ? "var(--azul)" : "var(--naranja)", textTransform: "uppercase" }}>
+                      {n.tipo === "fundamental" ? "📰 Fundamental" : "📈 Técnico"}
+                    </span>
+                    {n.ticker_relacionado && <span style={{ marginLeft: 6, background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>{n.ticker_relacionado}</span>}
+                    <div style={{ fontWeight: 600, marginTop: 4 }}>{n.titulo}</div>
+                    <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>{fmtFecha(n.publicado_en)} · {n.lecturas} lecturas</div>
+                  </div>
+                  <button className="btn btn-outline btn-sm" onClick={() => verReporteNoticia(n.id)}>Ver reporte</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Modal reporte noticia */}
+          {reporteNoticia && (
+            <div className="modal-overlay" onClick={() => setReporteNoticia(null)}>
+              <div className="modal" style={{ maxWidth: 640, maxHeight: "80vh", overflow: "auto" }} onClick={e => e.stopPropagation()}>
+                <div className="modal-title">📰 {reporteNoticia.noticia.titulo}</div>
+                <p style={{ fontSize: 13, color: "var(--gris)" }}>Grupos que leyeron: <b>{reporteNoticia.grupos_que_leyeron}</b></p>
+                <h4 style={{ marginTop: 16, marginBottom: 8, fontSize: 13 }}>Operaciones realizadas tras esta noticia</h4>
+                {reporteNoticia.operaciones_post_noticia.length === 0 ? (
+                  <p style={{ color: "var(--gris)", fontSize: 13 }}>Ninguna operación vinculada a esta noticia.</p>
+                ) : (
+                  <table>
+                    <thead><tr><th>Grupo</th><th>Ticker</th><th>Tipo</th><th>Cantidad</th><th>Fecha</th></tr></thead>
+                    <tbody>
+                      {reporteNoticia.operaciones_post_noticia.map((o, i) => (
+                        <tr key={i}>
+                          <td>{o.grupo}</td>
+                          <td><b>{o.instrumento}</b></td>
+                          <td className={o.tipo === "compra" ? "pos" : "neg"}>{o.tipo}</td>
+                          <td>{o.cantidad}</td>
+                          <td style={{ fontSize: 11 }}>{fmtFecha(o.timestamp)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <div className="modal-actions">
+                  <button className="btn btn-outline" onClick={() => setReporteNoticia(null)}>Cerrar</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "ranking" && (
+        <div className="panel-section">
+          <div className="panel-section-title">Ranking general</div>
+          {ranking.map(g => (
+            <div key={g.grupo} className="ranking-row">
+              <div className={`ranking-pos ${g.posicion === 1 ? "gold" : g.posicion === 2 ? "silver" : g.posicion === 3 ? "bronze" : ""}`}>
+                {g.posicion === 1 ? "🥇" : g.posicion === 2 ? "🥈" : g.posicion === 3 ? "🥉" : g.posicion}
+              </div>
+              <div className="ranking-nombre">
+                {g.grupo}
+                {g.perfil_riesgo && <span className={`badge badge-${g.perfil_riesgo}`} style={{ marginLeft: 8 }}>{g.perfil_riesgo}</span>}
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--gris)" }}>{fmt(g.capital_total)} · {g.num_operaciones} ops.</div>
+              </div>
+              <div className={`ranking-rend ${g.rendimiento_pct >= 0 ? "pos" : "neg"}`}>{fmtPct(g.rendimiento_pct)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── APP PRINCIPAL ──────────────────────────────────────────────────────────
+function App() {
+  const [session, setSession] = useState(null);
+  const [tab, setTab] = useState("cartera");
+
+  function handleLogin(data) {
+    setSession(data);
+    if (data.role === "docente") setTab("panel");
+    else if (!data.encuesta_completada) setTab("encuesta");
+    else setTab("cartera");
+  }
+
+  function logout() {
+    setSession(null);
+    setTab("cartera");
+  }
+
+  function encuestaCompletada(perfil) {
+    setSession(s => ({ ...s, perfil_riesgo: perfil, encuesta_completada: true }));
+    setTab("cartera");
+  }
+
+  if (!session) return <LoginPage onLogin={handleLogin} />;
+
+  const esDocente = session.role === "docente";
+  const perfil = session.perfil_riesgo;
+
+  // Tabs para grupo
+  const tabsGrupo = [
+    { id: "cartera", label: "Mi Cartera" },
+    { id: "operar", label: "Operar" },
+    { id: "noticias", label: "Noticias" },
+    { id: "ranking", label: "Ranking" },
+    { id: "historial", label: "Historial" },
+  ];
+
+  return (
+    <>
+      <nav className="nav">
+        <div className="nav-brand">📊 Simulador de Cartera · FCE UNICEN</div>
+        <div className="nav-right">
+          {!esDocente && (
+            <div className="nav-tabs">
+              {tabsGrupo.map(t => (
+                <button key={t.id} className={`tab-btn ${tab === t.id ? "active" : ""}`}
+                  onClick={() => setTab(t.id)}>{t.label}</button>
+              ))}
+            </div>
+          )}
+          <span style={{ fontSize: 12, opacity: .8 }}>
+            {esDocente ? "👤 Docente" : session.nombre}
+            {perfil && <span className={`badge badge-${perfil}`} style={{ marginLeft: 8 }}>{perfil}</span>}
+          </span>
+          <button className="btn-logout" onClick={logout}>Salir</button>
+        </div>
+      </nav>
+
+      {esDocente && <PanelDocente token={session.access_token} />}
+      {!esDocente && tab === "encuesta" && !session.encuesta_completada && (
+        <EncuestaPage token={session.access_token} onComplete={encuestaCompletada} />
+      )}
+      {!esDocente && tab === "cartera" && session.encuesta_completada && (
+        <MiCartera token={session.access_token} perfil={perfil} />
+      )}
+      {!esDocente && tab === "operar" && session.encuesta_completada && (
+        <Operar token={session.access_token} perfil={perfil} />
+      )}
+      {!esDocente && tab === "noticias" && session.encuesta_completada && (
+        <Noticias token={session.access_token} />
+      )}
+      {!esDocente && tab === "ranking" && session.encuesta_completada && (
+        <Ranking token={session.access_token} />
+      )}
+      {!esDocente && tab === "historial" && session.encuesta_completada && (
+        <Historial token={session.access_token} />
+      )}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
