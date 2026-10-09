@@ -90,7 +90,8 @@ async def cargar_alumnos_csv(
             if not nombre or not apellido:
                 errores.append(f"Fila {i}: nombre o apellido vacío")
                 continue
-            legajo = col(row, "legajo", "id", "dni") or None
+            legajo_raw = col(row, "legajo", "id", "dni")
+            legajo = legajo_raw if legajo_raw and legajo_raw.lower() not in ("sin definir", "s/d", "nd", "n/a", "-", "") else None
             email = col(row, "email", "mail", "correo") or None
 
             # Si ya existe el legajo, actualiza
