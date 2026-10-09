@@ -20,6 +20,7 @@ class Configuracion(Base):
     nombre_experiencia = Column(String(200), default="Simulador de Cartera")
     capital_inicial = Column(Float, default=1_000_000.0)
     comision = Column(Float, default=0.005)          # 0.5%
+    tasa_caucion = Column(Float, default=0.60)       # TNA 60% para cauciones
     activo = Column(Boolean, default=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
 
@@ -148,6 +149,23 @@ class LecturaNoticia(Base):
     grupo = relationship("Grupo")
 
 
+class Caucion(Base):
+    """Caución bursátil colocada por un grupo."""
+    __tablename__ = "cauciones"
+    id = Column(Integer, primary_key=True)
+    grupo_id = Column(Integer, ForeignKey("grupos.id"), nullable=False)
+    monto = Column(Float, nullable=False)            # capital colocado
+    tna = Column(Float, nullable=False)              # tasa nominal anual al momento de constituir
+    plazo_dias = Column(Integer, nullable=False)     # 1, 7, 30, 60, 90
+    intereses = Column(Float, nullable=False)        # intereses a cobrar al vencimiento
+    monto_total = Column(Float, nullable=False)      # monto + intereses
+    constituida_en = Column(DateTime, default=datetime.utcnow)
+    vence_en = Column(DateTime, nullable=False)
+    cobrada = Column(Boolean, default=False)         # True cuando el loop la acreditó
+
+    grupo = relationship("Grupo")
+
+
 class RespuestaEncuesta(Base):
     """Respuestas del grupo a la encuesta de perfil de riesgo."""
     __tablename__ = "respuestas_encuesta"
@@ -199,19 +217,42 @@ def _seed(db):
     if not db.query(Configuracion).first():
         db.add(Configuracion())
 
-    # Instrumentos (10 acciones líderes del Merval con precios base realistas)
+    # Instrumentos: acciones, bonos, CEDEARs y FCI
     if not db.query(Instrumento).first():
         instrumentos = [
-            ("GGAL",  "Grupo Financiero Galicia",        "accion",  2580.0,  0.025),
-            ("YPF",   "YPF S.A.",                        "accion",  1450.0,  0.030),
-            ("BMA",   "Banco Macro",                     "accion",  3200.0,  0.022),
-            ("PAMP",  "Pampa Energía",                   "accion",   890.0,  0.028),
-            ("TXAR",  "Ternium Argentina",               "accion",  1120.0,  0.024),
-            ("ALUA",  "Aluar Aluminio",                  "accion",   580.0,  0.020),
-            ("VALO",  "Grupo Supervielle",               "accion",  1850.0,  0.032),
-            ("CEPU",  "Central Puerto",                  "accion",   730.0,  0.026),
-            ("LOMA",  "Loma Negra",                      "accion",   670.0,  0.023),
-            ("BBAR",  "BBVA Argentina",                  "accion",  2100.0,  0.027),
+            # ticker, nombre, tipo, precio, volatilidad
+            # ── Acciones líderes Merval ────────────────────────────────────────
+            ("GGAL",   "Grupo Financiero Galicia",         "accion",   2580.0, 0.025),
+            ("YPF",    "YPF S.A.",                         "accion",   1450.0, 0.030),
+            ("BMA",    "Banco Macro",                      "accion",   3200.0, 0.022),
+            ("PAMP",   "Pampa Energía",                    "accion",    890.0, 0.028),
+            ("TXAR",   "Ternium Argentina",                "accion",   1120.0, 0.024),
+            ("ALUA",   "Aluar Aluminio",                   "accion",    580.0, 0.020),
+            ("SUPV",   "Grupo Supervielle",                "accion",   1850.0, 0.032),
+            ("CEPU",   "Central Puerto",                   "accion",    730.0, 0.026),
+            ("LOMA",   "Loma Negra",                       "accion",    670.0, 0.023),
+            ("BBAR",   "BBVA Argentina",                   "accion",   2100.0, 0.027),
+            ("TECO2",  "Telecom Argentina",                "accion",   1320.0, 0.022),
+            ("CRES",   "Cresud",                           "accion",    980.0, 0.028),
+            # ── Bonos soberanos ───────────────────────────────────────────────
+            ("AL30",   "Bono Soberano USD Ley Arg. 2030",  "bono",    51500.0, 0.012),
+            ("GD30",   "Bono Soberano USD Ley NY 2030",    "bono",    53200.0, 0.010),
+            ("AL35",   "Bono Soberano USD Ley Arg. 2035",  "bono",    43800.0, 0.013),
+            ("AE38",   "Bono Soberano USD Ley NY 2038",    "bono",    48100.0, 0.011),
+            ("TX26",   "Bono CER 2026",                    "bono",    97500.0, 0.008),
+            ("T2X5",   "Bono CER 2025",                    "bono",   103200.0, 0.006),
+            # ── CEDEARs ───────────────────────────────────────────────────────
+            ("AAPL",   "Apple Inc. (CEDEAR)",              "cedear",  18200.0, 0.018),
+            ("GOOGL",  "Alphabet Inc. (CEDEAR)",           "cedear",  15600.0, 0.020),
+            ("AMZN",   "Amazon.com Inc. (CEDEAR)",         "cedear",  17400.0, 0.019),
+            ("MSFT",   "Microsoft Corp. (CEDEAR)",         "cedear",  39800.0, 0.016),
+            ("TSLA",   "Tesla Inc. (CEDEAR)",              "cedear",  22300.0, 0.040),
+            ("BRKB",   "Berkshire Hathaway B (CEDEAR)",    "cedear",  43100.0, 0.014),
+            # ── FCI — precio en cuota parte (ARS) ────────────────────────────
+            # Volatilidad 0 = sin random walk, precio sube por drift en market.py
+            ("FCICONV", "FCI Conservador — Money Market",  "fci",      1000.0, 0.000),
+            ("FCIMOD",  "FCI Moderado — Renta Fija",       "fci",      1000.0, 0.003),
+            ("FCIAGR",  "FCI Agresivo — Renta Variable",   "fci",      1000.0, 0.008),
         ]
         for ticker, nombre, tipo, precio, vol in instrumentos:
             db.add(Instrumento(

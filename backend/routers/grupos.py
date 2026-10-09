@@ -1,5 +1,4 @@
 """Router de grupos — cartera, operaciones, encuesta, noticias, ranking"""
-from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -8,9 +7,10 @@ from pydantic import BaseModel
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from datetime import datetime, timedelta
 from models import (
     Grupo, Instrumento, Posicion, Operacion, Noticia,
-    LecturaNoticia, RespuestaEncuesta, Configuracion, get_db
+    LecturaNoticia, RespuestaEncuesta, Configuracion, Caucion, get_db
 )
 from auth import get_current_grupo
 from perfil_riesgo import PREGUNTAS, calcular_perfil, validar_coherencia
@@ -383,6 +383,93 @@ def marcar_leida(
         db.add(LecturaNoticia(noticia_id=noticia_id, grupo_id=grupo.id))
         db.commit()
     return {"ok": True}
+
+
+# ── Cauciones ────────────────────────────────────────────────────────────────
+
+PLAZOS_VALIDOS = {1, 7, 30, 60, 90}
+
+
+class CaucionIn(BaseModel):
+    monto: float
+    plazo_dias: int   # 1 / 7 / 30 / 60 / 90
+
+
+@router.post("/cauciones")
+def constituir_caucion(
+    body: CaucionIn,
+    db: Session = Depends(get_db),
+    grupo: Grupo = Depends(get_current_grupo)
+):
+    if body.plazo_dias not in PLAZOS_VALIDOS:
+        raise HTTPException(status_code=400, detail=f"Plazo inválido. Opciones: {sorted(PLAZOS_VALIDOS)}")
+    if body.monto <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
+    if body.monto > grupo.capital_disponible:
+        raise HTTPException(status_code=400, detail="Capital insuficiente")
+
+    config = db.query(Configuracion).first()
+    tna = config.tasa_caucion if config else 0.60
+
+    # Intereses = monto * TNA * (plazo / 365)
+    intereses = round(body.monto * tna * body.plazo_dias / 365, 2)
+    monto_total = round(body.monto + intereses, 2)
+
+    ahora = datetime.utcnow()
+    caucion = Caucion(
+        grupo_id=grupo.id,
+        monto=body.monto,
+        tna=tna,
+        plazo_dias=body.plazo_dias,
+        intereses=intereses,
+        monto_total=monto_total,
+        constituida_en=ahora,
+        vence_en=ahora + timedelta(days=body.plazo_dias),
+    )
+    grupo.capital_disponible -= body.monto
+    db.add(caucion)
+    db.commit()
+    db.refresh(caucion)
+
+    return {
+        "id": caucion.id,
+        "monto": caucion.monto,
+        "tna_pct": round(tna * 100, 2),
+        "plazo_dias": caucion.plazo_dias,
+        "intereses": caucion.intereses,
+        "monto_total": caucion.monto_total,
+        "vence_en": caucion.vence_en.isoformat(),
+        "capital_disponible": round(grupo.capital_disponible, 2),
+    }
+
+
+@router.get("/cauciones")
+def listar_cauciones(
+    db: Session = Depends(get_db),
+    grupo: Grupo = Depends(get_current_grupo)
+):
+    cauciones = (
+        db.query(Caucion)
+        .filter(Caucion.grupo_id == grupo.id)
+        .order_by(Caucion.constituida_en.desc())
+        .all()
+    )
+    ahora = datetime.utcnow()
+    return [
+        {
+            "id": c.id,
+            "monto": c.monto,
+            "tna_pct": round(c.tna * 100, 2),
+            "plazo_dias": c.plazo_dias,
+            "intereses": c.intereses,
+            "monto_total": c.monto_total,
+            "constituida_en": c.constituida_en.isoformat(),
+            "vence_en": c.vence_en.isoformat(),
+            "cobrada": c.cobrada,
+            "dias_restantes": max(0, (c.vence_en - ahora).days),
+        }
+        for c in cauciones
+    ]
 
 
 # ── Ranking ───────────────────────────────────────────────────────────────────

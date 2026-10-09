@@ -510,12 +510,17 @@ function EncuestaPage({ token, onComplete }) {
 // ── MI CARTERA ─────────────────────────────────────────────────────────────
 function MiCartera({ token, perfil }) {
   const [data, setData] = useState(null);
+  const [cauciones, setCauciones] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const cargar = useCallback(async () => {
     try {
-      const d = await api("GET", "/api/grupos/cartera", null, token);
+      const [d, c] = await Promise.all([
+        api("GET", "/api/grupos/cartera", null, token),
+        api("GET", "/api/grupos/cauciones", null, token),
+      ]);
       setData(d);
+      setCauciones(c);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [token]);
@@ -526,6 +531,8 @@ function MiCartera({ token, perfil }) {
   if (!data) return <div className="page"><div className="alert alert-error">Error al cargar cartera.</div></div>;
 
   const rend = data.rendimiento_pct;
+  const caucionesActivas = cauciones.filter(c => !c.cobrada);
+  const montoBloqueado = caucionesActivas.reduce((s, c) => s + c.monto, 0);
 
   return (
     <div className="page">
@@ -538,9 +545,15 @@ function MiCartera({ token, perfil }) {
           <div className="kpi-label">Valor de cartera</div>
           <div className="kpi-value">{fmt(data.valor_cartera)}</div>
         </div>
+        {montoBloqueado > 0 && (
+          <div className="kpi">
+            <div className="kpi-label">En cauciones</div>
+            <div className="kpi-value" style={{ color: "#7c3aed" }}>{fmt(montoBloqueado)}</div>
+          </div>
+        )}
         <div className="kpi">
           <div className="kpi-label">Capital total</div>
-          <div className="kpi-value">{fmt(data.capital_total)}</div>
+          <div className="kpi-value">{fmt(data.capital_total + montoBloqueado)}</div>
         </div>
         <div className="kpi">
           <div className="kpi-label">Rendimiento</div>
@@ -594,11 +607,16 @@ function MiCartera({ token, perfil }) {
 }
 
 // ── OPERAR ─────────────────────────────────────────────────────────────────
+const TIPO_LABELS = { accion: "Acciones", bono: "Bonos", cedear: "CEDEARs", fci: "FCI" };
+const TIPO_COLORES = { accion: "var(--azul)", bono: "var(--naranja)", cedear: "var(--verde)", fci: "#7c3aed" };
+
 function Operar({ token, perfil }) {
   const [mercado, setMercado] = useState([]);
+  const [filtroTipo, setFiltroTipo] = useState("accion");
   const [seleccionado, setSeleccionado] = useState(null);
   const [tipo, setTipo] = useState("compra");
   const [cantidad, setCantidad] = useState("");
+  const [montoFCI, setMontoFCI] = useState("");   // para FCI se ingresa en pesos
   const [preview, setPreview] = useState(null);
   const [modal, setModal] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -614,14 +632,24 @@ function Operar({ token, perfil }) {
 
   useEffect(() => { cargarMercado(); const id = setInterval(cargarMercado, 15000); return () => clearInterval(id); }, [cargarMercado]);
 
+  // Al cambiar filtro, limpiar selección
+  function cambiarFiltro(t) { setFiltroTipo(t); setSeleccionado(null); setCantidad(""); setMontoFCI(""); setError(""); }
+
+  // Para FCI: cantidad = floor(monto / precio_cuotaparte)
+  function cantidadFCI() {
+    if (!seleccionado || !montoFCI) return 0;
+    return Math.floor(parseFloat(montoFCI) / seleccionado.precio_actual);
+  }
+
   async function verPreview() {
-    if (!seleccionado || !cantidad || parseInt(cantidad) <= 0) return;
+    const cant = seleccionado?.tipo === "fci" ? cantidadFCI() : parseInt(cantidad);
+    if (!seleccionado || !cant || cant <= 0) return;
     setError(""); setLoading(true);
     try {
       const data = await api("POST", "/api/grupos/operar/preview", {
         instrumento_id: seleccionado.id,
         tipo,
-        cantidad: parseInt(cantidad),
+        cantidad: cant,
       }, token);
       setPreview(data);
       setModal(true);
@@ -633,18 +661,19 @@ function Operar({ token, perfil }) {
   }
 
   async function confirmar() {
+    const cant = seleccionado?.tipo === "fci" ? cantidadFCI() : parseInt(cantidad);
     setLoading(true);
     try {
       const data = await api("POST", "/api/grupos/operar", {
         instrumento_id: seleccionado.id,
         tipo,
-        cantidad: parseInt(cantidad),
+        cantidad: cant,
         confirmar_advertencia: true,
       }, token);
       setExito(data);
       setModal(false);
       setPreview(null);
-      setCantidad("");
+      setCantidad(""); setMontoFCI("");
       setSeleccionado(null);
       cargarMercado();
     } catch (e) {
@@ -654,6 +683,9 @@ function Operar({ token, perfil }) {
       setLoading(false);
     }
   }
+
+  const tiposDisponibles = [...new Set(mercado.map(i => i.tipo))];
+  const mercadoFiltrado = mercado.filter(i => i.tipo === filtroTipo);
 
   return (
     <div className="page">
@@ -667,61 +699,105 @@ function Operar({ token, perfil }) {
 
       <div className="card">
         <div className="card-title">Instrumentos disponibles</div>
+        {/* Tabs por tipo */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+          {["accion","bono","cedear","fci"].filter(t => tiposDisponibles.includes(t)).map(t => (
+            <button key={t}
+              onClick={() => cambiarFiltro(t)}
+              style={{
+                padding: "5px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "2px solid",
+                borderColor: filtroTipo === t ? TIPO_COLORES[t] : "#e5e7eb",
+                background: filtroTipo === t ? TIPO_COLORES[t] : "white",
+                color: filtroTipo === t ? "white" : "#374151",
+              }}>
+              {TIPO_LABELS[t] || t}
+            </button>
+          ))}
+        </div>
         <table>
           <thead>
             <tr>
               <th>Ticker</th>
               <th>Nombre</th>
-              <th>Tipo</th>
               <th style={{ textAlign: "right" }}>Precio</th>
               <th style={{ textAlign: "right" }}>Variación</th>
             </tr>
           </thead>
           <tbody>
-            {mercado.map(i => (
+            {mercadoFiltrado.map(i => (
               <tr
                 key={i.id}
                 className={`fila-instrumento ${seleccionado?.id === i.id ? "selected" : ""}`}
-                onClick={() => setSeleccionado(i)}
+                onClick={() => { setSeleccionado(i); setCantidad(""); setMontoFCI(""); }}
               >
                 <td><b>{i.ticker}</b></td>
-                <td style={{ color: "var(--gris)" }}>{i.nombre}</td>
-                <td><span className="badge" style={{ background: "#f3f4f6", color: "#374151" }}>{i.tipo}</span></td>
+                <td style={{ color: "var(--gris)", fontSize: 12 }}>{i.nombre}</td>
                 <td style={{ textAlign: "right" }}>{fmt(i.precio_actual)}</td>
                 <td style={{ textAlign: "right" }} className={i.variacion_pct >= 0 ? "pos" : "neg"}>
-                  {fmtPct(i.variacion_pct)}
+                  {i.tipo === "fci" ? <span style={{ color: "#7c3aed", fontSize: 11 }}>TNA {i.tipo === "fci" ? "—" : fmtPct(i.variacion_pct)}</span> : fmtPct(i.variacion_pct)}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        {filtroTipo === "fci" && (
+          <p style={{ fontSize: 11, color: "var(--gris)", marginTop: 10 }}>
+            💡 Los FCI no tienen variación diaria — su cuota parte sube de forma continua según su TNA. Precio = valor de cuota parte en ARS.
+          </p>
+        )}
       </div>
 
       {seleccionado && (
         <div className="card">
-          <div className="card-title">Orden — {seleccionado.ticker}</div>
+          <div className="card-title">Orden — {seleccionado.ticker}
+            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: "var(--gris)" }}>{seleccionado.nombre}</span>
+          </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <button className={`btn ${tipo === "compra" ? "btn-success" : "btn-outline"}`} onClick={() => setTipo("compra")}>Compra</button>
             <button className={`btn ${tipo === "venta" ? "btn-danger" : "btn-outline"}`} onClick={() => setTipo("venta")}>Venta</button>
           </div>
-          <div className="form-group">
-            <label className="form-label">Cantidad</label>
-            <input
-              type="number"
-              min="1"
-              value={cantidad}
-              onChange={e => setCantidad(e.target.value)}
-              placeholder="Ej: 100"
-            />
-          </div>
-          {cantidad && parseInt(cantidad) > 0 && (
-            <div className="alert alert-info" style={{ marginBottom: 12 }}>
-              Estimado: {fmt(seleccionado.precio_actual * parseInt(cantidad))} + comisión (0.5%)
+
+          {seleccionado.tipo === "fci" ? (
+            // FCI: ingresa monto en pesos, calcula cuotapartes
+            <div className="form-group">
+              <label className="form-label">Monto a invertir (ARS)</label>
+              <input
+                type="number"
+                min="1"
+                value={montoFCI}
+                onChange={e => setMontoFCI(e.target.value)}
+                placeholder="Ej: 50000"
+              />
+              {montoFCI && parseFloat(montoFCI) > 0 && (
+                <div className="alert alert-info" style={{ marginTop: 8 }}>
+                  Cuotapartes a recibir: <b>{cantidadFCI()}</b> · Precio cuotaparte: {fmt(seleccionado.precio_actual)}
+                </div>
+              )}
+            </div>
+          ) : (
+            // Acciones, bonos, CEDEARs: ingresa cantidad
+            <div className="form-group">
+              <label className="form-label">Cantidad</label>
+              <input
+                type="number"
+                min="1"
+                value={cantidad}
+                onChange={e => setCantidad(e.target.value)}
+                placeholder="Ej: 100"
+              />
+              {cantidad && parseInt(cantidad) > 0 && (
+                <div className="alert alert-info" style={{ marginBottom: 0, marginTop: 8 }}>
+                  Estimado: {fmt(seleccionado.precio_actual * parseInt(cantidad))} + comisión (0.5%)
+                </div>
+              )}
             </div>
           )}
-          <button className="btn btn-primary" onClick={verPreview} disabled={!cantidad || loading}>
+
+          <button className="btn btn-primary" style={{ marginTop: 12 }}
+            onClick={verPreview}
+            disabled={(seleccionado.tipo === "fci" ? !montoFCI || cantidadFCI() <= 0 : !cantidad) || loading}>
             {loading && <span className="spinner" />}
-            {tipo === "compra" ? "Confirmar compra" : "Confirmar venta"}
+            {tipo === "compra" ? "Ver resumen de compra" : "Ver resumen de venta"}
           </button>
         </div>
       )}
@@ -839,6 +915,201 @@ function NoticiaCard({ noticia, expanded, onToggle }) {
         <div className="noticia-contenido" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{noticia.contenido}</div>
       )}
       <div className="noticia-meta">{fmtFecha(noticia.publicado_en)} · {expanded ? "▲ Cerrar" : "▼ Leer más"}</div>
+    </div>
+  );
+}
+
+// ── CAUCIONES ──────────────────────────────────────────────────────────────
+function Cauciones({ token }) {
+  const [cauciones, setCauciones] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [monto, setMonto] = useState("");
+  const [plazo, setPlazo] = useState("30");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState("");
+  const [exito, setExito] = useState(null);
+  const [config, setConfig] = useState(null);
+
+  const cargar = useCallback(async () => {
+    try {
+      const [c, cfg] = await Promise.all([
+        api("GET", "/api/grupos/cauciones", null, token),
+        api("GET", "/api/grupos/cartera", null, token),
+      ]);
+      setCauciones(c);
+      setConfig(cfg);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [token]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  // Calcular intereses estimados
+  const tnaRef = 0.60; // default; se muestra en el label
+  function calcIntereses() {
+    const m = parseFloat(monto);
+    const p = parseInt(plazo);
+    if (!m || !p) return null;
+    const intereses = m * tnaRef * p / 365;
+    return { intereses: intereses.toFixed(2), total: (m + intereses).toFixed(2) };
+  }
+
+  async function constituir(e) {
+    e.preventDefault();
+    const m = parseFloat(monto);
+    if (!m || m <= 0) { setError("Ingresá un monto válido."); return; }
+    setError(""); setEnviando(true);
+    try {
+      const data = await api("POST", "/api/grupos/cauciones", {
+        monto: m,
+        plazo_dias: parseInt(plazo),
+      }, token);
+      setExito(data);
+      setMonto(""); setPlazo("30");
+      cargar();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  if (loading) return <div className="page"><div className="card">Cargando cauciones...</div></div>;
+
+  const preview = calcIntereses();
+  const activas = cauciones.filter(c => !c.cobrada);
+  const cobradas = cauciones.filter(c => c.cobrada);
+
+  return (
+    <div className="page">
+      {exito && (
+        <div className="alert alert-success">
+          ✅ Caución constituida por {fmt(exito.monto)} a {exito.plazo_dias} días @ TNA {exito.tna_pct}%.
+          Vas a recibir {fmt(exito.monto_total)} el {fmtFecha(exito.vence_en)}.
+          <button onClick={() => setExito(null)} style={{ float: "right", background: "none", border: "none", cursor: "pointer" }}>✕</button>
+        </div>
+      )}
+      {error && <div className="alert alert-error">{error} <button onClick={() => setError("")} style={{ float: "right", background: "none", border: "none", cursor: "pointer" }}>✕</button></div>}
+
+      <div className="card">
+        <div className="card-title">Nueva caución</div>
+        <div className="alert alert-info" style={{ marginBottom: 14 }}>
+          💡 Una caución es un préstamo a corto plazo garantizado. Bloqueás capital por el plazo elegido y recibís capital + intereses al vencimiento. TNA vigente: <b>60%</b>.
+        </div>
+        {config && (
+          <div style={{ fontSize: 12, color: "var(--gris)", marginBottom: 14 }}>
+            Efectivo disponible: <b>{fmt(config.capital_disponible)}</b>
+          </div>
+        )}
+        <form onSubmit={constituir}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div className="form-group" style={{ flex: "2 1 200px" }}>
+              <label className="form-label">Monto (ARS)</label>
+              <input
+                type="number"
+                min="1000"
+                step="1000"
+                value={monto}
+                onChange={e => setMonto(e.target.value)}
+                placeholder="Ej: 100000"
+              />
+            </div>
+            <div className="form-group" style={{ flex: "1 1 140px" }}>
+              <label className="form-label">Plazo</label>
+              <select value={plazo} onChange={e => setPlazo(e.target.value)}>
+                <option value="1">1 día</option>
+                <option value="7">7 días</option>
+                <option value="30">30 días</option>
+                <option value="60">60 días</option>
+                <option value="90">90 días</option>
+              </select>
+            </div>
+          </div>
+
+          {preview && monto && (
+            <div className="alert alert-info" style={{ marginBottom: 12 }}>
+              <b>Intereses estimados:</b> {fmt(parseFloat(preview.intereses))} &nbsp;|&nbsp;
+              <b>Total a cobrar:</b> {fmt(parseFloat(preview.total))}
+            </div>
+          )}
+
+          <button className="btn btn-primary" type="submit" disabled={!monto || enviando}>
+            {enviando && <span className="spinner" />}
+            {enviando ? "Constituyendo..." : "Constituir caución"}
+          </button>
+        </form>
+      </div>
+
+      {activas.length > 0 && (
+        <div className="card">
+          <div className="card-title">Cauciones activas</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Monto</th>
+                <th>TNA</th>
+                <th>Plazo</th>
+                <th style={{ textAlign: "right" }}>Intereses</th>
+                <th style={{ textAlign: "right" }}>Total</th>
+                <th>Vence</th>
+                <th style={{ textAlign: "right" }}>Días restantes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activas.map(c => (
+                <tr key={c.id}>
+                  <td>{fmt(c.monto)}</td>
+                  <td style={{ color: "#7c3aed", fontWeight: 600 }}>{c.tna_pct}%</td>
+                  <td>{c.plazo_dias} días</td>
+                  <td style={{ textAlign: "right" }} className="pos">+{fmt(c.intereses)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 600 }}>{fmt(c.monto_total)}</td>
+                  <td style={{ fontSize: 12 }}>{fmtFecha(c.vence_en)}</td>
+                  <td style={{ textAlign: "right" }}>
+                    {c.dias_restantes === 0
+                      ? <span style={{ color: "var(--naranja)", fontWeight: 700 }}>Vence hoy</span>
+                      : <span>{c.dias_restantes}d</span>
+                    }
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {cobradas.length > 0 && (
+        <div className="card">
+          <div className="card-title" style={{ color: "var(--gris)" }}>Cauciones cobradas</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Monto</th>
+                <th>TNA</th>
+                <th>Plazo</th>
+                <th style={{ textAlign: "right" }}>Intereses</th>
+                <th style={{ textAlign: "right" }}>Total cobrado</th>
+                <th>Venció</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cobradas.map(c => (
+                <tr key={c.id} style={{ opacity: 0.7 }}>
+                  <td>{fmt(c.monto)}</td>
+                  <td>{c.tna_pct}%</td>
+                  <td>{c.plazo_dias} días</td>
+                  <td style={{ textAlign: "right" }} className="pos">+{fmt(c.intereses)}</td>
+                  <td style={{ textAlign: "right" }}>{fmt(c.monto_total)}</td>
+                  <td style={{ fontSize: 12 }}>{fmtFecha(c.vence_en)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {cauciones.length === 0 && (
+        <div className="alert alert-info">Todavía no constituiste ninguna caución.</div>
+      )}
     </div>
   );
 }
@@ -1324,6 +1595,7 @@ function App() {
   const tabsGrupo = [
     { id: "cartera", label: "Mi Cartera" },
     { id: "operar", label: "Operar" },
+    { id: "cauciones", label: "Cauciones" },
     { id: "noticias", label: "Noticias" },
     { id: "ranking", label: "Ranking" },
     { id: "historial", label: "Historial" },
@@ -1359,6 +1631,9 @@ function App() {
       )}
       {!esDocente && tab === "operar" && session.encuesta_completada && (
         <Operar token={session.access_token} perfil={perfil} />
+      )}
+      {!esDocente && tab === "cauciones" && session.encuesta_completada && (
+        <Cauciones token={session.access_token} />
       )}
       {!esDocente && tab === "noticias" && session.encuesta_completada && (
         <Noticias token={session.access_token} />
