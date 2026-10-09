@@ -1013,6 +1013,15 @@ function PanelDocente({ token }) {
     } catch (e) { flash("error", e.message); }
   }
 
+  async function asignarGrupo(alumnoId, grupoId) {
+    try {
+      await api("POST", `/api/docente/grupos/${grupoId}/alumnos`, { alumno_ids: [alumnoId] }, token);
+      const al = await api("GET", "/api/docente/alumnos", null, token);
+      setAlumnos(al);
+      flash("success", "Alumno asignado.");
+    } catch (e) { flash("error", e.message); }
+  }
+
   async function verReporteGrupo(id) {
     const r = await api("GET", `/api/docente/reportes/grupo/${id}`, null, token);
     setReporteGrupo(r);
@@ -1130,14 +1139,22 @@ function PanelDocente({ token }) {
           <div className="panel-section">
             <div className="panel-section-title">Alumnos ({alumnos.length})</div>
             <table>
-              <thead><tr><th>Apellido</th><th>Nombre</th><th>Legajo</th><th>Grupo</th></tr></thead>
+              <thead><tr><th>Apellido</th><th>Nombre</th><th>Legajo</th><th>Asignar grupo</th></tr></thead>
               <tbody>
                 {alumnos.map(a => (
                   <tr key={a.id}>
                     <td>{a.apellido}</td>
                     <td>{a.nombre}</td>
-                    <td>{a.legajo}</td>
-                    <td>{a.grupo_nombre || <span style={{ color: "#d1d5db" }}>Sin grupo</span>}</td>
+                    <td>{a.legajo || <span style={{ color: "#d1d5db" }}>—</span>}</td>
+                    <td>
+                      <select
+                        value={a.grupo_id || ""}
+                        onChange={e => { if (e.target.value) asignarGrupo(a.id, e.target.value); }}
+                        style={{ fontSize: 12, padding: "3px 6px", borderRadius: 6, border: "1px solid #d1d5db", color: a.grupo_id ? "var(--texto)" : "var(--gris)" }}>
+                        <option value="">Sin grupo</option>
+                        {grupos.map(g => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+                      </select>
+                    </td>
                   </tr>
                 ))}
               </tbody>
