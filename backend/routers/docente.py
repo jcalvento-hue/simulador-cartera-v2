@@ -71,16 +71,24 @@ async def cargar_alumnos_csv(
     text = content.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
 
+    # Normaliza encabezados a minúscula para aceptar Nombre, NOMBRE, nombre, etc.
+    def col(row, *keys):
+        row_lower = {k.strip().lower(): v for k, v in row.items()}
+        for k in keys:
+            if k in row_lower:
+                return row_lower[k].strip()
+        return ""
+
     creados, errores = 0, []
     for i, row in enumerate(reader, 1):
         try:
-            nombre = row.get("nombre", "").strip()
-            apellido = row.get("apellido", "").strip()
+            nombre = col(row, "nombre", "name")
+            apellido = col(row, "apellido", "lastname", "surname")
             if not nombre or not apellido:
                 errores.append(f"Fila {i}: nombre o apellido vacío")
                 continue
-            legajo = row.get("legajo", "").strip() or None
-            email = row.get("email", "").strip() or None
+            legajo = col(row, "legajo", "id", "dni") or None
+            email = col(row, "email", "mail", "correo") or None
 
             # Si ya existe el legajo, actualiza
             if legajo:
