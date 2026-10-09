@@ -69,7 +69,10 @@ async def cargar_alumnos_csv(
     """
     content = await file.read()
     text = content.decode("utf-8-sig")
-    reader = csv.DictReader(io.StringIO(text))
+    # Auto-detecta separador (coma o punto y coma)
+    sample = text[:1024]
+    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
 
     # Normaliza encabezados a minúscula para aceptar Nombre, NOMBRE, nombre, etc.
     def col(row, *keys):
