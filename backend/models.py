@@ -4,7 +4,7 @@ SQLite via SQLAlchemy (un único archivo simulador.db)
 """
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, DateTime,
-    Boolean, Text, ForeignKey, JSON
+    Boolean, Text, ForeignKey, JSON, text
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -71,6 +71,7 @@ class Instrumento(Base):
     tipo = Column(String(50), default="accion")          # accion / bono / cedear
     precio_inicial = Column(Float, nullable=False)
     precio_actual = Column(Float, nullable=False)
+    precio_sesion = Column(Float, nullable=True)         # precio al inicio de la sesión actual
     volatilidad = Column(Float, default=0.02)            # desviación estándar del random walk
     activo = Column(Boolean, default=True)
 
@@ -197,6 +198,13 @@ def get_db():
 def init_db():
     """Crea las tablas y carga datos iniciales si la DB está vacía."""
     Base.metadata.create_all(bind=engine)
+    # Migración: agregar columna precio_sesion si no existe
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE instrumentos ADD COLUMN precio_sesion FLOAT"))
+            conn.commit()
+        except Exception:
+            pass  # ya existe
     _seed(SessionLocal())
 
 

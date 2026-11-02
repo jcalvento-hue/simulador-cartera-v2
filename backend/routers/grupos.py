@@ -91,8 +91,9 @@ def get_mercado(db: Session = Depends(get_db), _=Depends(get_current_grupo)):
             .first()
         )
 
-        precio_sesion = primer.precio if primer else i.precio_inicial
-        var_sesion = round((i.precio_actual - precio_sesion) / precio_sesion * 100, 2)
+        # Usar precio_sesion (guardado al regenerar) o primer punto del historial como fallback
+        precio_sesion_base = i.precio_sesion if i.precio_sesion else (primer.precio if primer else i.precio_inicial)
+        var_sesion = round((i.precio_actual - precio_sesion_base) / precio_sesion_base * 100, 2)
 
         if precio_24h:
             var_24h = round((i.precio_actual - precio_24h.precio) / precio_24h.precio * 100, 2)

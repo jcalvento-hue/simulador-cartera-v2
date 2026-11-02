@@ -717,6 +717,7 @@ function Operar({ token, perfil }) {
   const [exito, setExito] = useState(null);
   const [error, setError] = useState("");
   const [historial, setHistorial] = useState([]);
+  const [historialKey, setHistorialKey] = useState(0);
   const chartRef = useRef(null);
   const chartInstanceRef = useRef(null);
 
@@ -724,18 +725,24 @@ function Operar({ token, perfil }) {
     try {
       const d = await api("GET", "/api/grupos/mercado", null, token);
       setMercado(d);
+      // Incrementar clave para forzar recarga del historial
+      setHistorialKey(k => k + 1);
     } catch (e) { console.error(e); }
   }, [token]);
 
   useEffect(() => { cargarMercado(); const id = setInterval(cargarMercado, 15000); return () => clearInterval(id); }, [cargarMercado]);
 
-  // Cargar historial al seleccionar instrumento
+  // Cargar historial al seleccionar instrumento o cuando se actualizan precios
   useEffect(() => {
     if (!seleccionado) { setHistorial([]); return; }
     api("GET", `/api/grupos/mercado/${seleccionado.ticker}/historial`, null, token)
-      .then(setHistorial)
+      .then(d => {
+        // API devuelve {ticker, precios: [{t, p}]} — normalizar a {timestamp, precio}
+        const pts = (d.precios || []).map(x => ({ timestamp: x.t, precio: x.p }));
+        setHistorial(pts);
+      })
       .catch(() => setHistorial([]));
-  }, [seleccionado?.id]);
+  }, [seleccionado?.id, historialKey]);
 
   // Dibujar/actualizar gráfico cuando cambia el historial
   useEffect(() => {

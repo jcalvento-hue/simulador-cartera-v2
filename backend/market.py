@@ -112,41 +112,40 @@ def generar_historial_inicial(db: Session = None, horas: float = 2.0):
         pasos = int(horas * 3600 / _INTERVALO_SEG)   # ej: 2h → 240 pasos
 
         for inst in instrumentos:
+            # Guardar precio de inicio de sesión (para variación = 0 al arrancar)
+            inst.precio_sesion = inst.precio_actual
+
             # Borrar historial previo de este instrumento
             db.query(HistorialPrecios).filter(
                 HistorialPrecios.instrumento_id == inst.id
             ).delete()
 
-            # Simular hacia atrás desde el precio actual
-            # Reconstruimos la trayectoria partiendo del precio_inicial y
-            # avanzando con el mismo GBM/drift, luego ajustamos el precio_actual
-            # al final de la trayectoria para mantener coherencia.
-            precios = []
-            precio = inst.precio_inicial
+            # Simular historial retroactivo: partimos del precio actual y
+            # aplicamos GBM/drift hacia ATRÁS (invertido), para que el último
+            # punto sea el precio actual y la variación de sesión arranque en 0.
+            precios = [inst.precio_actual]
+            precio = inst.precio_actual
 
-            for _ in range(pasos):
+            for _ in range(pasos - 1):
                 if inst.tipo == "fci":
                     tna = _FCI_TNA.get(inst.ticker, 0.40)
-                    factor = math.exp(tna * _INTERVALO_SEG / _SEG_ANUALES)
+                    # Invertir drift hacia atrás
+                    factor = math.exp(-tna * _INTERVALO_SEG / _SEG_ANUALES)
                     precio = round(precio * factor, 4)
                 else:
                     sigma = inst.volatilidad
                     if sigma == 0:
-                        precios.append(precio)
+                        precios.insert(0, precio)
                         continue
                     epsilon = random.gauss(0, 1)
                     factor = math.exp(-0.5 * sigma**2 + sigma * epsilon)
                     precio = round(precio * factor, 2)
                     precio = max(precio, inst.precio_inicial * 0.20)
-                precios.append(precio)
+                precios.insert(0, precio)
 
-            # Actualizar precio_actual al último precio simulado
-            if precios:
-                inst.precio_actual = precios[-1]
-
-            # Insertar puntos con timestamps retroactivos
+            # Insertar puntos con timestamps retroactivos (el último = ahora)
             for i, p in enumerate(precios):
-                ts = ahora - timedelta(seconds=_INTERVALO_SEG * (pasos - 1 - i))
+                ts = ahora - timedelta(seconds=_INTERVALO_SEG * (len(precios) - 1 - i))
                 db.add(HistorialPrecios(
                     instrumento_id=inst.id,
                     precio=p,
