@@ -183,29 +183,91 @@
     .login-title { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
     .login-sub { color: var(--gris); font-size: 13px; margin-bottom: 28px; }
     /* Encuesta */
-    .pregunta-card {
+    .encuesta-header {
       background: var(--blanco);
-      border-radius: 12px;
-      padding: 24px;
+      border-radius: 14px;
+      padding: 22px 24px 18px;
       box-shadow: var(--sombra);
       margin-bottom: 20px;
     }
-    .pregunta-num { font-size: 11px; font-weight: 700; color: var(--azul); margin-bottom: 6px; text-transform: uppercase; }
-    .pregunta-texto { font-size: 15px; font-weight: 600; margin-bottom: 14px; line-height: 1.4; }
+    .encuesta-header h2 { font-size: 19px; font-weight: 800; margin-bottom: 4px; }
+    .encuesta-header p { color: var(--gris); font-size: 13px; line-height: 1.5; margin-bottom: 14px; }
+    .progreso-barra {
+      background: #e5e7eb;
+      border-radius: 8px;
+      height: 7px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .progreso-fill {
+      background: var(--azul);
+      height: 100%;
+      border-radius: 8px;
+      transition: width .35s ease;
+    }
+    .progreso-label { font-size: 11px; color: var(--gris); }
+    .pregunta-card {
+      background: var(--blanco);
+      border-radius: 14px;
+      padding: 22px 22px 16px;
+      box-shadow: var(--sombra);
+      margin-bottom: 14px;
+    }
+    .pregunta-num {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--azul);
+      background: #eff6ff;
+      border-radius: 20px;
+      padding: 2px 10px;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .pregunta-texto { font-size: 15px; font-weight: 600; margin-bottom: 14px; line-height: 1.5; }
     .opcion {
       display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 10px 14px;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 16px;
       border: 2px solid #e5e7eb;
-      border-radius: 8px;
+      border-radius: 10px;
       margin-bottom: 8px;
       cursor: pointer;
-      transition: all .15s;
+      transition: border-color .15s, background .15s, box-shadow .15s;
+      user-select: none;
     }
-    .opcion:hover { border-color: var(--azul); background: #eff6ff; }
-    .opcion.selected { border-color: var(--azul); background: #eff6ff; }
-    .opcion input[type=radio] { margin-top: 2px; accent-color: var(--azul); }
+    .opcion:hover { border-color: var(--azul); background: #f5f8ff; }
+    .opcion.selected {
+      border-color: var(--azul);
+      background: #eff6ff;
+      box-shadow: 0 0 0 3px rgba(20,82,239,.08);
+    }
+    .opcion input[type=radio] { display: none; }
+    .opcion-radio {
+      flex-shrink: 0;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      border: 2px solid #d1d5db;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color .15s, background .15s;
+    }
+    .opcion.selected .opcion-radio {
+      border-color: var(--azul);
+      background: var(--azul);
+    }
+    .opcion-radio-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: white;
+      opacity: 0;
+      transition: opacity .15s;
+    }
+    .opcion.selected .opcion-radio-dot { opacity: 1; }
+    .opcion-texto { font-size: 14px; line-height: 1.4; }
     /* Noticia */
     .noticia-card {
       border-left: 4px solid var(--azul);
@@ -435,15 +497,19 @@ function EncuestaPage({ token, onComplete }) {
 
   if (loading) return <div className="page"><div className="card">Cargando encuesta...</div></div>;
 
+  const ICONS = { conservador: "🛡️", moderado: "⚖️", agresivo: "🚀" };
   if (resultado) {
     return (
       <div className="page">
-        <div className="card" style={{ textAlign: "center", padding: 40 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>
-            Tu perfil: <span className={`badge badge-${resultado.perfil}`}>{LABELS[resultado.perfil]}</span>
+        <div className="card" style={{ textAlign: "center", padding: "48px 32px" }}>
+          <div style={{ fontSize: 52, marginBottom: 12 }}>{ICONS[resultado.perfil]}</div>
+          <p style={{ fontSize: 12, fontWeight: 700, color: "var(--gris)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tu perfil inversor</p>
+          <div style={{ marginBottom: 16 }}>
+            <span className={`badge badge-${resultado.perfil}`} style={{ fontSize: 16, padding: "6px 20px" }}>
+              {LABELS[resultado.perfil]}
+            </span>
           </div>
-          <p style={{ color: "var(--gris)", fontSize: 14, maxWidth: 400, margin: "12px auto 24px" }}>
+          <p style={{ color: "var(--gris)", fontSize: 14, lineHeight: 1.6, maxWidth: 380, margin: "0 auto 28px" }}>
             {DESCRIP[resultado.perfil]}
           </p>
           <button className="btn btn-primary" onClick={() => onComplete(resultado.perfil)}>
@@ -459,15 +525,13 @@ function EncuestaPage({ token, onComplete }) {
 
   return (
     <div className="page">
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>Encuesta de perfil de riesgo</h2>
-        <p style={{ color: "var(--gris)", fontSize: 13 }}>
-          Respondé las siguientes preguntas para determinar el perfil inversor de tu grupo.
-        </p>
-        <div style={{ marginTop: 12, background: "#e5e7eb", borderRadius: 8, height: 6 }}>
-          <div style={{ background: "var(--azul)", height: 6, borderRadius: 8, width: `${progreso}%`, transition: "width .3s" }} />
+      <div className="encuesta-header">
+        <h2>Encuesta de perfil de riesgo</h2>
+        <p>Respondé las siguientes preguntas para determinar el perfil inversor de tu grupo.</p>
+        <div className="progreso-barra">
+          <div className="progreso-fill" style={{ width: `${progreso}%` }} />
         </div>
-        <p style={{ fontSize: 11, color: "var(--gris)", marginTop: 4 }}>{completadas} de {preguntas.length} respondidas</p>
+        <p className="progreso-label">{completadas} de {preguntas.length} respondidas</p>
       </div>
 
       {preguntas.map(p => (
@@ -483,13 +547,16 @@ function EncuestaPage({ token, onComplete }) {
                 checked={respuestas[p.num] === letra}
                 onChange={() => setRespuestas(r => ({ ...r, [p.num]: letra }))}
               />
-              <span>{op.texto}</span>
+              <span className="opcion-radio">
+                <span className="opcion-radio-dot" />
+              </span>
+              <span className="opcion-texto">{op.texto}</span>
             </label>
           ))}
         </div>
       ))}
 
-      <button className="btn btn-primary" style={{ width: "100%" }} onClick={enviar} disabled={enviando}>
+      <button className="btn btn-primary" style={{ width: "100%", marginTop: 4 }} onClick={enviar} disabled={enviando}>
         {enviando && <span className="spinner" />}
         {enviando ? "Calculando perfil..." : "Completar encuesta"}
       </button>
