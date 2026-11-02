@@ -1171,7 +1171,7 @@ function PanelDocente({ token }) {
                   <button className="btn btn-outline btn-sm" onClick={() => verReporteGrupo(g.id)}>Ver reporte</button>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--gris)", marginTop: 6 }}>
-                  Capital: {fmt(g.capital_total)} · {g.num_operaciones} operaciones · {g.alumnos.length} alumnos
+                  Capital: {fmt(g.capital_total)} · {g.num_operaciones} operaciones · {(g.alumnos || []).length} alumnos
                 </div>
               </div>
             ))}
