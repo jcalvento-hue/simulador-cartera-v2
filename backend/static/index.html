@@ -7,6 +7,7 @@
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     /* ── Tokens de diseño ─────────────────────────────────────────── */
     :root {
@@ -715,6 +716,9 @@ function Operar({ token, perfil }) {
   const [loading, setLoading] = useState(false);
   const [exito, setExito] = useState(null);
   const [error, setError] = useState("");
+  const [historial, setHistorial] = useState([]);
+  const chartRef = useRef(null);
+  const chartInstanceRef = useRef(null);
 
   const cargarMercado = useCallback(async () => {
     try {
@@ -724,6 +728,55 @@ function Operar({ token, perfil }) {
   }, [token]);
 
   useEffect(() => { cargarMercado(); const id = setInterval(cargarMercado, 15000); return () => clearInterval(id); }, [cargarMercado]);
+
+  // Cargar historial al seleccionar instrumento
+  useEffect(() => {
+    if (!seleccionado) { setHistorial([]); return; }
+    api("GET", `/api/grupos/mercado/${seleccionado.ticker}/historial`, null, token)
+      .then(setHistorial)
+      .catch(() => setHistorial([]));
+  }, [seleccionado?.id]);
+
+  // Dibujar/actualizar gráfico cuando cambia el historial
+  useEffect(() => {
+    if (!chartRef.current || historial.length === 0) return;
+    if (chartInstanceRef.current) chartInstanceRef.current.destroy();
+    const labels = historial.map(h => {
+      const d = new Date(h.timestamp);
+      return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+    });
+    const datos = historial.map(h => h.precio);
+    const primero = datos[0];
+    const ultimo = datos[datos.length - 1];
+    const color = ultimo >= primero ? "#16a34a" : "#dc2626";
+    chartInstanceRef.current = new Chart(chartRef.current, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          data: datos,
+          borderColor: color,
+          backgroundColor: color + "22",
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.3,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => `$${ctx.parsed.y.toFixed(2)}` }
+        }},
+        scales: {
+          x: { ticks: { maxTicksLimit: 4, font: { size: 10 } }, grid: { display: false } },
+          y: { ticks: { font: { size: 10 }, callback: v => `$${v.toFixed(0)}` }, grid: { color: "#e5e7eb" } }
+        }
+      }
+    });
+    return () => { if (chartInstanceRef.current) chartInstanceRef.current.destroy(); };
+  }, [historial]);
 
   async function verPreview() {
     if (!seleccionado || !cantidad || parseInt(cantidad) <= 0) return;
@@ -835,6 +888,13 @@ function Operar({ token, perfil }) {
           <div style={{ fontSize: 13, color: "var(--gris)" }}>{seleccionado.nombre}</div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>{fmt(seleccionado.precio_actual)}
             <span style={{ fontSize: 13, marginLeft: 8 }} className={seleccionado.variacion_pct >= 0 ? "pos" : "neg"}>{fmtPct(seleccionado.variacion_pct)}</span>
+          </div>
+          {/* Gráfico de cotización */}
+          <div style={{ height: 110, position: "relative" }}>
+            {historial.length > 1
+              ? <canvas ref={chartRef} />
+              : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--gris)" }}>Cargando historial...</div>
+            }
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button className={`btn btn-sm ${tipo === "compra" ? "btn-success" : "btn-outline"}`} style={{ flex: 1 }} onClick={() => setTipo("compra")}>Compra</button>
