@@ -1122,6 +1122,19 @@ function PanelDocente({ token }) {
     } catch (e) { flash("error", e.message); }
   }
 
+  async function asignarAlumno(alumnoId, grupoId) {
+    try {
+      if (grupoId === "") {
+        flash("error", "Seleccioná un grupo válido.");
+        return;
+      }
+      await api("POST", `/api/docente/grupos/${grupoId}/alumnos`, { alumno_ids: [alumnoId] }, token);
+      const al = await api("GET", "/api/docente/alumnos", null, token);
+      setAlumnos(al);
+      flash("success", "Alumno asignado al grupo.");
+    } catch (e) { flash("error", e.message); }
+  }
+
   async function verReporteGrupo(id) {
     const r = await api("GET", `/api/docente/reportes/grupo/${id}`, null, token);
     setReporteGrupo(r);
@@ -1171,7 +1184,7 @@ function PanelDocente({ token }) {
                   <button className="btn btn-outline btn-sm" onClick={() => verReporteGrupo(g.id)}>Ver reporte</button>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--gris)", marginTop: 6 }}>
-                  Capital: {fmt(g.capital_total)} · {g.num_operaciones} operaciones · {(g.alumnos || []).length} alumnos
+                  Capital: {fmt(g.capital_total ?? 0)} · {g.num_operaciones} operaciones · {(g.alumnos || []).length} alumnos
                 </div>
               </div>
             ))}
@@ -1246,7 +1259,16 @@ function PanelDocente({ token }) {
                     <td>{a.apellido}</td>
                     <td>{a.nombre}</td>
                     <td>{a.legajo}</td>
-                    <td>{a.grupo_nombre || <span style={{ color: "#d1d5db" }}>Sin grupo</span>}</td>
+                    <td>
+                      <select
+                        value={a.grupo_id || ""}
+                        onChange={e => asignarAlumno(a.id, e.target.value)}
+                        style={{ fontSize: 13, padding: "2px 6px", borderRadius: 6, border: "1px solid var(--borde)", background: "var(--fondo)", color: "var(--texto)", minWidth: 120 }}
+                      >
+                        <option value="">Sin grupo</option>
+                        {grupos.map(g => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+                      </select>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1440,9 +1462,10 @@ function App() {
     <>
       <nav className="nav">
         <div className="nav-brand">
-          <svg className="nav-logo" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="60" cy="60" r="60" fill="white"/>
-            <text x="60" y="78" textAnchor="middle" fontFamily="Arial,sans-serif" fontWeight="900" fontSize="52" fill="#1452EF">e</text>
+          <svg className="nav-logo" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+            <rect width="56" height="56" fill="#1452EF" rx="8"/>
+            <polygon points="56,40 56,56 40,56" fill="white" opacity="0.18"/>
+            <text x="28" y="40" textAnchor="middle" fontFamily="Arial,sans-serif" fontWeight="900" fontSize="36" fill="white">e</text>
           </svg>
           Económicas UNICEN
         </div>
