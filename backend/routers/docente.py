@@ -15,6 +15,7 @@ from models import (
     Instrumento, Configuracion, get_db, Docente
 )
 from auth import get_current_docente
+from market import generar_historial_inicial
 
 router = APIRouter(prefix="/api/docente", tags=["docente"])
 
@@ -418,7 +419,14 @@ def update_config(body: ConfigIn, db: Session = Depends(get_db), _=Depends(get_c
     if not config:
         config = Configuracion()
         db.add(config)
+
+    estaba_inactivo = not config.activo
     for field, val in body.dict(exclude_none=True).items():
         setattr(config, field, val)
     db.commit()
+
+    # Si el simulador acaba de activarse, generar historial retroactivo (2 horas)
+    if body.activo is True and estaba_inactivo:
+        generar_historial_inicial(db=db, horas=2.0)
+
     return {"ok": True}
