@@ -839,7 +839,8 @@ function Operar({ token, perfil }) {
               <th>Nombre</th>
               <th>Tipo</th>
               <th style={{ textAlign: "right" }}>Precio</th>
-              <th style={{ textAlign: "right" }}>Variación</th>
+              <th style={{ textAlign: "right" }}>Var. sesión</th>
+              <th style={{ textAlign: "right" }}>Var. 24hs</th>
             </tr>
           </thead>
           <tbody>
@@ -853,8 +854,11 @@ function Operar({ token, perfil }) {
                 <td style={{ color: "var(--gris)" }}>{i.nombre}</td>
                 <td><span className="badge" style={{ background: "#f3f4f6", color: "#374151" }}>{i.tipo}</span></td>
                 <td style={{ textAlign: "right" }}>{fmt(i.precio_actual)}</td>
-                <td style={{ textAlign: "right" }} className={i.variacion_pct >= 0 ? "pos" : "neg"}>
-                  {fmtPct(i.variacion_pct)}
+                <td style={{ textAlign: "right" }} className={i.variacion_sesion_pct >= 0 ? "pos" : "neg"}>
+                  {fmtPct(i.variacion_sesion_pct)}
+                </td>
+                <td style={{ textAlign: "right" }} className={i.variacion_24h_pct >= 0 ? "pos" : "neg"}>
+                  {fmtPct(i.variacion_24h_pct)}
                 </td>
               </tr>
             ))}
@@ -887,7 +891,7 @@ function Operar({ token, perfil }) {
           </div>
           <div style={{ fontSize: 13, color: "var(--gris)" }}>{seleccionado.nombre}</div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>{fmt(seleccionado.precio_actual)}
-            <span style={{ fontSize: 13, marginLeft: 8 }} className={seleccionado.variacion_pct >= 0 ? "pos" : "neg"}>{fmtPct(seleccionado.variacion_pct)}</span>
+            <span style={{ fontSize: 13, marginLeft: 8 }} className={seleccionado.variacion_sesion_pct >= 0 ? "pos" : "neg"}>{fmtPct(seleccionado.variacion_sesion_pct)}</span>
           </div>
           {/* Gráfico de cotización */}
           <div style={{ height: 110, position: "relative" }}>
@@ -1266,6 +1270,15 @@ function PanelDocente({ token }) {
     finally { setSavingConfig(false); }
   }
 
+  async function regenerarHistorial() {
+    setSavingConfig(true);
+    try {
+      await api("POST", "/api/docente/configuracion/regenerar-historial", null, token);
+      flash("success", "✅ Historial regenerado. Las variaciones de sesión se reiniciaron.");
+    } catch (e) { flash("error", e.message); }
+    finally { setSavingConfig(false); }
+  }
+
   return (
     <div className="page">
       {msg.text && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
@@ -1559,6 +1572,21 @@ function PanelDocente({ token }) {
             {!config.activo && (
               <div style={{ fontSize: 12, color: "var(--naranja)", background: "#fef3c7", borderRadius: 6, padding: "8px 12px" }}>
                 ⚠️ Al activar se generará automáticamente el historial de precios de las últimas 2 horas para todos los activos.
+              </div>
+            )}
+            {config.activo && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--borde, #e5e7eb)" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Regenerar historial</div>
+                <div style={{ fontSize: 12, color: "var(--gris)", marginBottom: 10 }}>
+                  Reinicia la variación de sesión de todos los activos. Útil al comenzar una nueva clase con el simulador ya activo.
+                </div>
+                <button
+                  className="btn btn-outline"
+                  disabled={savingConfig}
+                  onClick={regenerarHistorial}
+                >
+                  {savingConfig ? "Regenerando..." : "🔄 Regenerar historial"}
+                </button>
               </div>
             )}
           </div>

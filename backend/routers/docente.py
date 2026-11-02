@@ -395,6 +395,13 @@ def reporte_grupo(
     }
 
 
+@router.post("/configuracion/regenerar-historial")
+def regenerar_historial(db: Session = Depends(get_db), _=Depends(get_current_docente)):
+    """Regenera el historial de precios para todos los instrumentos activos (últimas 2 horas)."""
+    generar_historial_inicial(db=db, horas=2.0)
+    return {"ok": True, "mensaje": "Historial regenerado correctamente."}
+
+
 @router.get("/configuracion")
 def get_config(db: Session = Depends(get_db), _=Depends(get_current_docente)):
     config = db.query(Configuracion).first()

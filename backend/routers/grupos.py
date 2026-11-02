@@ -7,7 +7,7 @@ from pydantic import BaseModel
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta  # noqa: F401
 from models import (
     Grupo, Instrumento, Posicion, Operacion, Noticia,
     LecturaNoticia, RespuestaEncuesta, Configuracion, Caucion, get_db
@@ -64,20 +64,54 @@ def completar_encuesta(
 
 @router.get("/mercado")
 def get_mercado(db: Session = Depends(get_db), _=Depends(get_current_grupo)):
+    from models import HistorialPrecios
+    from sqlalchemy import func
+
     instrumentos = db.query(Instrumento).filter(Instrumento.activo == True).all()
-    return [
-        {
+    ahora = datetime.utcnow()
+    hace_24h = ahora - timedelta(hours=24)
+
+    resultado = []
+    for i in instrumentos:
+        # Primer precio del historial = inicio de sesión actual
+        primer = (
+            db.query(HistorialPrecios)
+            .filter(HistorialPrecios.instrumento_id == i.id)
+            .order_by(HistorialPrecios.timestamp.asc())
+            .first()
+        )
+        # Precio más cercano a hace 24hs
+        precio_24h = (
+            db.query(HistorialPrecios)
+            .filter(
+                HistorialPrecios.instrumento_id == i.id,
+                HistorialPrecios.timestamp <= hace_24h,
+            )
+            .order_by(HistorialPrecios.timestamp.desc())
+            .first()
+        )
+
+        precio_sesion = primer.precio if primer else i.precio_inicial
+        var_sesion = round((i.precio_actual - precio_sesion) / precio_sesion * 100, 2)
+
+        if precio_24h:
+            var_24h = round((i.precio_actual - precio_24h.precio) / precio_24h.precio * 100, 2)
+        else:
+            var_24h = var_sesion  # si no hay datos de 24hs, usar var sesión
+
+        resultado.append({
             "id": i.id,
             "ticker": i.ticker,
             "nombre": i.nombre,
             "tipo": i.tipo,
             "precio_actual": i.precio_actual,
             "precio_inicial": i.precio_inicial,
-            "variacion_pct": round((i.precio_actual - i.precio_inicial) / i.precio_inicial * 100, 2),
+            "variacion_pct": var_sesion,           # ahora es var. sesión
+            "variacion_sesion_pct": var_sesion,
+            "variacion_24h_pct": var_24h,
             "volatilidad": i.volatilidad,
-        }
-        for i in instrumentos
-    ]
+        })
+    return resultado
 
 
 @router.get("/mercado/{ticker}/historial")
