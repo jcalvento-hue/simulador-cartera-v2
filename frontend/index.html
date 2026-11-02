@@ -7,6 +7,7 @@
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     /* ── Tokens de diseño ─────────────────────────────────────────── */
     :root {
@@ -39,7 +40,7 @@
       box-shadow: 0 2px 8px rgba(0,0,0,.2);
     }
     .nav-brand { font-size: 16px; font-weight: 700; letter-spacing: .5px; display: flex; align-items: center; gap: 10px; }
-    .nav-logo { height: 32px; width: auto; display: block; }
+    .nav-logo { height: 32px; width: auto; display: block; border-radius: 6px; background: white; padding: 2px; }
     .nav-right { display: flex; align-items: center; gap: 16px; font-size: 13px; }
     .nav-tabs { display: flex; gap: 4px; }
     .tab-btn {
@@ -173,13 +174,12 @@
     .login-logo {
       width: 56px;
       height: 56px;
-      background: var(--azul);
       border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
       margin: 0 auto 20px;
-      font-size: 26px;
+      overflow: hidden;
     }
     .login-title { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
     .login-sub { color: var(--gris); font-size: 13px; margin-bottom: 28px; }
@@ -378,11 +378,26 @@
 </head>
 <body>
 <div id="root"></div>
+<script>
+(function(){
+  var b64="data:image/png;base64,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";
+  function setNavLogo(){
+    var el=document.getElementById("nav-logo-img");
+    if(el) el.src=b64;
+  }
+  document.addEventListener("DOMContentLoaded",setNavLogo);
+  // También intentamos inmediatamente por si el DOM ya cargó
+  setNavLogo();
+})();
+</script>
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
 
 // ── Configuración ──────────────────────────────────────────────────────────
 const API_BASE = window.SIMULADOR_API_URL || "https://simulador-cartera-v2.onrender.com";
+
+const LOGO_FCE = "data:image/png;base64,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";
+
 
 // ── API helper ─────────────────────────────────────────────────────────────
 async function api(method, path, body, token) {
@@ -451,9 +466,7 @@ function LoginPage({ onLogin }) {
     <div className="login-wrap">
       <div className="login-card">
         <div className="login-logo">
-          <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" style={{width:40,height:40}}>
-            <text x="60" y="82" textAnchor="middle" fontFamily="Arial,sans-serif" fontWeight="900" fontSize="72" fill="white">e</text>
-          </svg>
+          <img src={LOGO_FCE} style={{width:40,height:40,borderRadius:8}} alt="FCE UNICEN" />
         </div>
         <div className="login-title">Simulador de Cartera</div>
         <div className="login-sub">Económicas · UNICEN · Tandil</div>
@@ -703,6 +716,9 @@ function Operar({ token, perfil }) {
   const [loading, setLoading] = useState(false);
   const [exito, setExito] = useState(null);
   const [error, setError] = useState("");
+  const [historial, setHistorial] = useState([]);
+  const chartRef = useRef(null);
+  const chartInstanceRef = useRef(null);
 
   const cargarMercado = useCallback(async () => {
     try {
@@ -712,6 +728,55 @@ function Operar({ token, perfil }) {
   }, [token]);
 
   useEffect(() => { cargarMercado(); const id = setInterval(cargarMercado, 15000); return () => clearInterval(id); }, [cargarMercado]);
+
+  // Cargar historial al seleccionar instrumento
+  useEffect(() => {
+    if (!seleccionado) { setHistorial([]); return; }
+    api("GET", `/api/grupos/mercado/${seleccionado.ticker}/historial`, null, token)
+      .then(setHistorial)
+      .catch(() => setHistorial([]));
+  }, [seleccionado?.id]);
+
+  // Dibujar/actualizar gráfico cuando cambia el historial
+  useEffect(() => {
+    if (!chartRef.current || historial.length === 0) return;
+    if (chartInstanceRef.current) chartInstanceRef.current.destroy();
+    const labels = historial.map(h => {
+      const d = new Date(h.timestamp);
+      return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+    });
+    const datos = historial.map(h => h.precio);
+    const primero = datos[0];
+    const ultimo = datos[datos.length - 1];
+    const color = ultimo >= primero ? "#16a34a" : "#dc2626";
+    chartInstanceRef.current = new Chart(chartRef.current, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          data: datos,
+          borderColor: color,
+          backgroundColor: color + "22",
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.3,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => `$${ctx.parsed.y.toFixed(2)}` }
+        }},
+        scales: {
+          x: { ticks: { maxTicksLimit: 4, font: { size: 10 } }, grid: { display: false } },
+          y: { ticks: { font: { size: 10 }, callback: v => `$${v.toFixed(0)}` }, grid: { color: "#e5e7eb" } }
+        }
+      }
+    });
+    return () => { if (chartInstanceRef.current) chartInstanceRef.current.destroy(); };
+  }, [historial]);
 
   async function verPreview() {
     if (!seleccionado || !cantidad || parseInt(cantidad) <= 0) return;
@@ -755,7 +820,7 @@ function Operar({ token, perfil }) {
   }
 
   return (
-    <div className="page">
+    <div className="page" style={{ paddingRight: seleccionado ? 300 : 0, transition: "padding-right .2s" }}>
       {exito && (
         <div className="alert alert-success">
           ✅ {exito.tipo === "compra" ? "Compra" : "Venta"} ejecutada: {exito.cantidad} {exito.instrumento} @ {fmt(exito.precio)} | Total: {fmt(exito.monto_total)}
@@ -766,6 +831,7 @@ function Operar({ token, perfil }) {
 
       <div className="card">
         <div className="card-title">Instrumentos disponibles</div>
+        <p style={{ fontSize: 12, color: "var(--gris)", marginBottom: 10 }}>Hacé clic en una fila para operar</p>
         <table>
           <thead>
             <tr>
@@ -781,7 +847,7 @@ function Operar({ token, perfil }) {
               <tr
                 key={i.id}
                 className={`fila-instrumento ${seleccionado?.id === i.id ? "selected" : ""}`}
-                onClick={() => setSeleccionado(i)}
+                onClick={() => { setSeleccionado(i); setCantidad(""); setError(""); setPreview(null); }}
               >
                 <td><b>{i.ticker}</b></td>
                 <td style={{ color: "var(--gris)" }}>{i.nombre}</td>
@@ -796,14 +862,45 @@ function Operar({ token, perfil }) {
         </table>
       </div>
 
+      {/* Panel flotante de orden */}
       {seleccionado && (
-        <div className="card">
-          <div className="card-title">Orden — {seleccionado.ticker}</div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-            <button className={`btn ${tipo === "compra" ? "btn-success" : "btn-outline"}`} onClick={() => setTipo("compra")}>Compra</button>
-            <button className={`btn ${tipo === "venta" ? "btn-danger" : "btn-outline"}`} onClick={() => setTipo("venta")}>Venta</button>
+        <div style={{
+          position: "fixed",
+          top: 56,
+          right: 0,
+          width: 288,
+          height: "calc(100vh - 56px)",
+          background: "var(--blanco)",
+          borderLeft: "1.5px solid var(--borde, #d1d5db)",
+          boxShadow: "-4px 0 16px rgba(0,0,0,.1)",
+          overflowY: "auto",
+          padding: "20px 18px",
+          zIndex: 100,
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Orden — {seleccionado.ticker}</div>
+            <button onClick={() => { setSeleccionado(null); setCantidad(""); setError(""); setPreview(null); }}
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--gris)", lineHeight: 1 }}>✕</button>
           </div>
-          <div className="form-group">
+          <div style={{ fontSize: 13, color: "var(--gris)" }}>{seleccionado.nombre}</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{fmt(seleccionado.precio_actual)}
+            <span style={{ fontSize: 13, marginLeft: 8 }} className={seleccionado.variacion_pct >= 0 ? "pos" : "neg"}>{fmtPct(seleccionado.variacion_pct)}</span>
+          </div>
+          {/* Gráfico de cotización */}
+          <div style={{ height: 110, position: "relative" }}>
+            {historial.length > 1
+              ? <canvas ref={chartRef} />
+              : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--gris)" }}>Cargando historial...</div>
+            }
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className={`btn btn-sm ${tipo === "compra" ? "btn-success" : "btn-outline"}`} style={{ flex: 1 }} onClick={() => setTipo("compra")}>Compra</button>
+            <button className={`btn btn-sm ${tipo === "venta" ? "btn-danger" : "btn-outline"}`} style={{ flex: 1 }} onClick={() => setTipo("venta")}>Venta</button>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">Cantidad</label>
             <input
               type="number"
@@ -814,13 +911,13 @@ function Operar({ token, perfil }) {
             />
           </div>
           {cantidad && parseInt(cantidad) > 0 && (
-            <div className="alert alert-info" style={{ marginBottom: 12 }}>
+            <div className="alert alert-info" style={{ fontSize: 13, padding: "8px 12px" }}>
               Estimado: {fmt(seleccionado.precio_actual * parseInt(cantidad))} + comisión (0.5%)
             </div>
           )}
-          <button className="btn btn-primary" onClick={verPreview} disabled={!cantidad || loading}>
+          <button className="btn btn-primary" onClick={verPreview} disabled={!cantidad || loading} style={{ marginTop: "auto" }}>
             {loading && <span className="spinner" />}
-            {tipo === "compra" ? "Confirmar compra" : "Confirmar venta"}
+            {tipo === "compra" ? "Ver preview compra" : "Ver preview venta"}
           </button>
         </div>
       )}
@@ -864,20 +961,27 @@ function Operar({ token, perfil }) {
 }
 
 // ── NOTICIAS ───────────────────────────────────────────────────────────────
-function Noticias({ token }) {
+function Noticias({ token, onNoLeidasChange }) {
   const [noticias, setNoticias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandida, setExpandida] = useState(null);
 
   useEffect(() => {
     api("GET", "/api/grupos/noticias", null, token)
-      .then(setNoticias)
+      .then(ns => {
+        setNoticias(ns);
+        if (onNoLeidasChange) onNoLeidasChange(ns.filter(n => !n.leida).length);
+      })
       .finally(() => setLoading(false));
   }, [token]);
 
   async function marcarLeida(id) {
     await api("POST", `/api/grupos/noticias/${id}/leer`, null, token);
-    setNoticias(n => n.map(x => x.id === id ? { ...x, leida: true } : x));
+    setNoticias(n => {
+      const updated = n.map(x => x.id === id ? { ...x, leida: true } : x);
+      if (onNoLeidasChange) onNoLeidasChange(updated.filter(x => !x.leida).length);
+      return updated;
+    });
   }
 
   if (loading) return <div className="page"><div className="card">Cargando noticias...</div></div>;
@@ -1061,13 +1165,18 @@ function PanelDocente({ token }) {
   const [reporteGrupo, setReporteGrupo] = useState(null);
   const [reporteNoticia, setReporteNoticia] = useState(null);
 
+  // Configuración
+  const [config, setConfig] = useState({ nombre_experiencia: "", capital_inicial: 1000000, comision: 0.006, activo: false });
+  const [savingConfig, setSavingConfig] = useState(false);
+
   useEffect(() => {
     Promise.all([
       api("GET", "/api/docente/grupos", null, token),
       api("GET", "/api/docente/alumnos", null, token),
       api("GET", "/api/docente/noticias", null, token),
       api("GET", "/api/docente/reportes/ranking", null, token),
-    ]).then(([g, a, n, r]) => { setGrupos(g); setAlumnos(a); setNoticias(n); setRanking(r); });
+      api("GET", "/api/docente/configuracion", null, token),
+    ]).then(([g, a, n, r, cfg]) => { setGrupos(g); setAlumnos(a); setNoticias(n); setRanking(r); setConfig(cfg); });
   }, [token]);
 
   function flash(type, text) { setMsg({ type, text }); setTimeout(() => setMsg({ type: "", text: "" }), 4000); }
@@ -1122,6 +1231,19 @@ function PanelDocente({ token }) {
     } catch (e) { flash("error", e.message); }
   }
 
+  async function asignarAlumno(alumnoId, grupoId) {
+    try {
+      if (grupoId === "") {
+        flash("error", "Seleccioná un grupo válido.");
+        return;
+      }
+      await api("POST", `/api/docente/grupos/${grupoId}/alumnos`, { alumno_ids: [alumnoId] }, token);
+      const al = await api("GET", "/api/docente/alumnos", null, token);
+      setAlumnos(al);
+      flash("success", "Alumno asignado al grupo.");
+    } catch (e) { flash("error", e.message); }
+  }
+
   async function verReporteGrupo(id) {
     const r = await api("GET", `/api/docente/reportes/grupo/${id}`, null, token);
     setReporteGrupo(r);
@@ -1132,17 +1254,49 @@ function PanelDocente({ token }) {
     setReporteNoticia(r);
   }
 
+  async function guardarConfig(patch) {
+    setSavingConfig(true);
+    try {
+      await api("PUT", "/api/docente/configuracion", patch, token);
+      setConfig(c => ({ ...c, ...patch }));
+      flash("success", patch.activo !== undefined
+        ? (patch.activo ? "✅ Simulador activado. Historial generado para todos los activos." : "⏸ Simulador desactivado.")
+        : "Configuración guardada.");
+    } catch (e) { flash("error", e.message); }
+    finally { setSavingConfig(false); }
+  }
+
   return (
     <div className="page">
       {msg.text && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
-      <div className="nav-tabs" style={{ marginBottom: 20, display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {["grupos", "alumnos", "noticias", "ranking"].map(t => (
-          <button key={t} className={`btn ${tab === t ? "btn-primary" : "btn-outline"} btn-sm`}
-            onClick={() => setTab(t)} style={{ textTransform: "capitalize" }}>
-            {t === "grupos" ? "👥 Grupos" : t === "alumnos" ? "🎓 Alumnos" : t === "noticias" ? "📰 Noticias" : "🏆 Ranking"}
+      <div className="nav-tabs" style={{ marginBottom: 20, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {[
+          { id: "grupos",   label: "👥 Grupos" },
+          { id: "alumnos",  label: "🎓 Alumnos" },
+          { id: "noticias", label: "📰 Noticias" },
+          { id: "ranking",  label: "🏆 Ranking" },
+          { id: "config",   label: "⚙️ Configuración" },
+        ].map(t => (
+          <button key={t.id} className={`btn ${tab === t.id ? "btn-primary" : "btn-outline"} btn-sm`}
+            onClick={() => setTab(t.id)}>
+            {t.label}
           </button>
         ))}
+        {/* indicador estado simulador */}
+        <span style={{
+          marginLeft: "auto", fontSize: 12, fontWeight: 600,
+          color: config.activo ? "var(--verde)" : "var(--gris)",
+          display: "flex", alignItems: "center", gap: 5,
+        }}>
+          <span style={{
+            width: 8, height: 8, borderRadius: "50%",
+            background: config.activo ? "var(--verde)" : "var(--gris)",
+            display: "inline-block",
+            boxShadow: config.activo ? "0 0 0 3px rgba(22,163,74,.25)" : "none",
+          }} />
+          {config.activo ? "Simulador activo" : "Simulador inactivo"}
+        </span>
       </div>
 
       {tab === "grupos" && (
@@ -1171,7 +1325,7 @@ function PanelDocente({ token }) {
                   <button className="btn btn-outline btn-sm" onClick={() => verReporteGrupo(g.id)}>Ver reporte</button>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--gris)", marginTop: 6 }}>
-                  Capital: {fmt(g.capital_total)} · {g.num_operaciones} operaciones · {g.alumnos.length} alumnos
+                  Capital: {fmt(g.capital_total ?? 0)} · {g.num_operaciones} operaciones · {(g.alumnos || []).length} alumnos
                 </div>
               </div>
             ))}
@@ -1246,7 +1400,16 @@ function PanelDocente({ token }) {
                     <td>{a.apellido}</td>
                     <td>{a.nombre}</td>
                     <td>{a.legajo}</td>
-                    <td>{a.grupo_nombre || <span style={{ color: "#d1d5db" }}>Sin grupo</span>}</td>
+                    <td>
+                      <select
+                        value={a.grupo_id || ""}
+                        onChange={e => asignarAlumno(a.id, e.target.value)}
+                        style={{ fontSize: 13, padding: "2px 6px", borderRadius: 6, border: "1px solid var(--borde)", background: "var(--fondo)", color: "var(--texto)", minWidth: 120 }}
+                      >
+                        <option value="">Sin grupo</option>
+                        {grupos.map(g => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+                      </select>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1367,6 +1530,91 @@ function PanelDocente({ token }) {
           ))}
         </div>
       )}
+
+      {tab === "config" && (
+        <div style={{ maxWidth: 520 }}>
+          {/* Activar / desactivar simulador */}
+          <div className="panel-section">
+            <div className="panel-section-title">Estado del simulador</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0" }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>
+                  {config.activo ? "🟢 Activo" : "⚫ Inactivo"}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--gris)", marginTop: 3 }}>
+                  {config.activo
+                    ? "Los grupos pueden operar. Precios actualizándose cada 30s."
+                    : "Los grupos no pueden acceder al simulador."}
+                </div>
+              </div>
+              <button
+                className={`btn ${config.activo ? "btn-outline" : "btn-primary"}`}
+                style={{ minWidth: 130 }}
+                disabled={savingConfig}
+                onClick={() => guardarConfig({ activo: !config.activo })}
+              >
+                {savingConfig ? "Guardando..." : config.activo ? "⏸ Desactivar" : "▶ Activar simulador"}
+              </button>
+            </div>
+            {!config.activo && (
+              <div style={{ fontSize: 12, color: "var(--naranja)", background: "#fef3c7", borderRadius: 6, padding: "8px 12px" }}>
+                ⚠️ Al activar se generará automáticamente el historial de precios de las últimas 2 horas para todos los activos.
+              </div>
+            )}
+          </div>
+
+          {/* Parámetros */}
+          <div className="panel-section">
+            <div className="panel-section-title">Parámetros de la experiencia</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>Nombre de la experiencia</span>
+                <input
+                  value={config.nombre_experiencia || ""}
+                  onChange={e => setConfig(c => ({ ...c, nombre_experiencia: e.target.value }))}
+                  placeholder="Ej: Simulador 2C 2024"
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>Capital inicial por grupo ($)</span>
+                <input
+                  type="number"
+                  value={config.capital_inicial}
+                  onChange={e => setConfig(c => ({ ...c, capital_inicial: parseFloat(e.target.value) || 0 }))}
+                  min={0}
+                  step={100000}
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>Comisión por operación (%)</span>
+                <input
+                  type="number"
+                  value={((config.comision || 0) * 100).toFixed(2)}
+                  onChange={e => setConfig(c => ({ ...c, comision: parseFloat(e.target.value) / 100 || 0 }))}
+                  min={0}
+                  max={5}
+                  step={0.01}
+                />
+                <span style={{ fontSize: 11, color: "var(--gris)" }}>
+                  Actualmente: {((config.comision || 0) * 100).toFixed(2)}% → sobre ${fmt(config.capital_inicial)} = {fmt(config.capital_inicial * (config.comision || 0))} por operación de capital completo
+                </span>
+              </label>
+              <button
+                className="btn btn-primary"
+                style={{ alignSelf: "flex-start", marginTop: 4 }}
+                disabled={savingConfig}
+                onClick={() => guardarConfig({
+                  nombre_experiencia: config.nombre_experiencia,
+                  capital_inicial: config.capital_inicial,
+                  comision: config.comision,
+                })}
+              >
+                {savingConfig ? "Guardando..." : "💾 Guardar parámetros"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1395,6 +1643,7 @@ function App() {
   const [session, setSession] = useState(null);
   const [tab, setTab] = useState("cartera");
   const [toast, setToast] = useState(null);
+  const [noLeidasCount, setNoLeidasCount] = useState(0);
 
   function handleLogin(data) {
     setSession(data);
@@ -1403,9 +1652,24 @@ function App() {
     else setTab("cartera");
   }
 
+  // Cargar conteo de noticias no leídas al iniciar sesión (sólo alumnos)
+  useEffect(() => {
+    if (!session || session.role === "docente" || !session.encuesta_completada) return;
+    api("GET", "/api/grupos/noticias", null, session.access_token)
+      .then(ns => setNoLeidasCount(ns.filter(n => !n.leida).length))
+      .catch(() => {});
+    const id = setInterval(() => {
+      api("GET", "/api/grupos/noticias", null, session.access_token)
+        .then(ns => setNoLeidasCount(ns.filter(n => !n.leida).length))
+        .catch(() => {});
+    }, 30000);
+    return () => clearInterval(id);
+  }, [session]);
+
   function logout() {
     setSession(null);
     setTab("cartera");
+    setNoLeidasCount(0);
   }
 
   function encuestaCompletada(perfil) {
@@ -1431,7 +1695,7 @@ function App() {
   const tabsGrupo = [
     { id: "cartera", label: "Mi Cartera" },
     { id: "operar", label: "Operar" },
-    { id: "noticias", label: "Noticias" },
+    { id: "noticias", label: "Noticias", badge: noLeidasCount > 0 ? noLeidasCount : null },
     { id: "ranking", label: "Ranking" },
     { id: "historial", label: "Historial" },
   ];
@@ -1440,10 +1704,7 @@ function App() {
     <>
       <nav className="nav">
         <div className="nav-brand">
-          <svg className="nav-logo" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="60" cy="60" r="60" fill="white"/>
-            <text x="60" y="78" textAnchor="middle" fontFamily="Arial,sans-serif" fontWeight="900" fontSize="52" fill="#1452EF">e</text>
-          </svg>
+          {/* logo nav */}<img id="nav-logo-img" className="nav-logo" alt="FCE UNICEN" ref={el => { if(el) el.src = LOGO_FCE; }} />
           Económicas UNICEN
         </div>
         <div className="nav-right">
@@ -1451,7 +1712,20 @@ function App() {
             <div className="nav-tabs">
               {tabsGrupo.map(t => (
                 <button key={t.id} className={`tab-btn ${tab === t.id ? "active" : ""}`}
-                  onClick={() => cambiarTab(t.id)}>{t.label}</button>
+                  onClick={() => cambiarTab(t.id)}
+                  style={{ position: "relative" }}>
+                  {t.label}
+                  {t.badge && (
+                    <span style={{
+                      position: "absolute", top: -4, right: -6,
+                      background: "#ef4444", color: "#fff",
+                      borderRadius: "50%", minWidth: 16, height: 16,
+                      fontSize: 10, fontWeight: 700, lineHeight: "16px",
+                      textAlign: "center", padding: "0 3px",
+                      boxShadow: "0 0 0 2px var(--azul)",
+                    }}>{t.badge}</span>
+                  )}
+                </button>
               ))}
             </div>
           )}
@@ -1479,7 +1753,7 @@ function App() {
         <Operar token={session.access_token} perfil={perfil} />
       )}
       {!esDocente && tab === "noticias" && session.encuesta_completada && (
-        <Noticias token={session.access_token} />
+        <Noticias token={session.access_token} onNoLeidasChange={setNoLeidasCount} />
       )}
       {!esDocente && tab === "ranking" && session.encuesta_completada && (
         <Ranking token={session.access_token} />

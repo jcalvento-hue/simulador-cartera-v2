@@ -1165,13 +1165,18 @@ function PanelDocente({ token }) {
   const [reporteGrupo, setReporteGrupo] = useState(null);
   const [reporteNoticia, setReporteNoticia] = useState(null);
 
+  // Configuración
+  const [config, setConfig] = useState({ nombre_experiencia: "", capital_inicial: 1000000, comision: 0.006, activo: false });
+  const [savingConfig, setSavingConfig] = useState(false);
+
   useEffect(() => {
     Promise.all([
       api("GET", "/api/docente/grupos", null, token),
       api("GET", "/api/docente/alumnos", null, token),
       api("GET", "/api/docente/noticias", null, token),
       api("GET", "/api/docente/reportes/ranking", null, token),
-    ]).then(([g, a, n, r]) => { setGrupos(g); setAlumnos(a); setNoticias(n); setRanking(r); });
+      api("GET", "/api/docente/configuracion", null, token),
+    ]).then(([g, a, n, r, cfg]) => { setGrupos(g); setAlumnos(a); setNoticias(n); setRanking(r); setConfig(cfg); });
   }, [token]);
 
   function flash(type, text) { setMsg({ type, text }); setTimeout(() => setMsg({ type: "", text: "" }), 4000); }
@@ -1249,17 +1254,49 @@ function PanelDocente({ token }) {
     setReporteNoticia(r);
   }
 
+  async function guardarConfig(patch) {
+    setSavingConfig(true);
+    try {
+      await api("PUT", "/api/docente/configuracion", patch, token);
+      setConfig(c => ({ ...c, ...patch }));
+      flash("success", patch.activo !== undefined
+        ? (patch.activo ? "✅ Simulador activado. Historial generado para todos los activos." : "⏸ Simulador desactivado.")
+        : "Configuración guardada.");
+    } catch (e) { flash("error", e.message); }
+    finally { setSavingConfig(false); }
+  }
+
   return (
     <div className="page">
       {msg.text && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
-      <div className="nav-tabs" style={{ marginBottom: 20, display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {["grupos", "alumnos", "noticias", "ranking"].map(t => (
-          <button key={t} className={`btn ${tab === t ? "btn-primary" : "btn-outline"} btn-sm`}
-            onClick={() => setTab(t)} style={{ textTransform: "capitalize" }}>
-            {t === "grupos" ? "👥 Grupos" : t === "alumnos" ? "🎓 Alumnos" : t === "noticias" ? "📰 Noticias" : "🏆 Ranking"}
+      <div className="nav-tabs" style={{ marginBottom: 20, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {[
+          { id: "grupos",   label: "👥 Grupos" },
+          { id: "alumnos",  label: "🎓 Alumnos" },
+          { id: "noticias", label: "📰 Noticias" },
+          { id: "ranking",  label: "🏆 Ranking" },
+          { id: "config",   label: "⚙️ Configuración" },
+        ].map(t => (
+          <button key={t.id} className={`btn ${tab === t.id ? "btn-primary" : "btn-outline"} btn-sm`}
+            onClick={() => setTab(t.id)}>
+            {t.label}
           </button>
         ))}
+        {/* indicador estado simulador */}
+        <span style={{
+          marginLeft: "auto", fontSize: 12, fontWeight: 600,
+          color: config.activo ? "var(--verde)" : "var(--gris)",
+          display: "flex", alignItems: "center", gap: 5,
+        }}>
+          <span style={{
+            width: 8, height: 8, borderRadius: "50%",
+            background: config.activo ? "var(--verde)" : "var(--gris)",
+            display: "inline-block",
+            boxShadow: config.activo ? "0 0 0 3px rgba(22,163,74,.25)" : "none",
+          }} />
+          {config.activo ? "Simulador activo" : "Simulador inactivo"}
+        </span>
       </div>
 
       {tab === "grupos" && (
@@ -1491,6 +1528,91 @@ function PanelDocente({ token }) {
               <div className={`ranking-rend ${g.rendimiento_pct >= 0 ? "pos" : "neg"}`}>{fmtPct(g.rendimiento_pct)}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === "config" && (
+        <div style={{ maxWidth: 520 }}>
+          {/* Activar / desactivar simulador */}
+          <div className="panel-section">
+            <div className="panel-section-title">Estado del simulador</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0" }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>
+                  {config.activo ? "🟢 Activo" : "⚫ Inactivo"}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--gris)", marginTop: 3 }}>
+                  {config.activo
+                    ? "Los grupos pueden operar. Precios actualizándose cada 30s."
+                    : "Los grupos no pueden acceder al simulador."}
+                </div>
+              </div>
+              <button
+                className={`btn ${config.activo ? "btn-outline" : "btn-primary"}`}
+                style={{ minWidth: 130 }}
+                disabled={savingConfig}
+                onClick={() => guardarConfig({ activo: !config.activo })}
+              >
+                {savingConfig ? "Guardando..." : config.activo ? "⏸ Desactivar" : "▶ Activar simulador"}
+              </button>
+            </div>
+            {!config.activo && (
+              <div style={{ fontSize: 12, color: "var(--naranja)", background: "#fef3c7", borderRadius: 6, padding: "8px 12px" }}>
+                ⚠️ Al activar se generará automáticamente el historial de precios de las últimas 2 horas para todos los activos.
+              </div>
+            )}
+          </div>
+
+          {/* Parámetros */}
+          <div className="panel-section">
+            <div className="panel-section-title">Parámetros de la experiencia</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>Nombre de la experiencia</span>
+                <input
+                  value={config.nombre_experiencia || ""}
+                  onChange={e => setConfig(c => ({ ...c, nombre_experiencia: e.target.value }))}
+                  placeholder="Ej: Simulador 2C 2024"
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>Capital inicial por grupo ($)</span>
+                <input
+                  type="number"
+                  value={config.capital_inicial}
+                  onChange={e => setConfig(c => ({ ...c, capital_inicial: parseFloat(e.target.value) || 0 }))}
+                  min={0}
+                  step={100000}
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>Comisión por operación (%)</span>
+                <input
+                  type="number"
+                  value={((config.comision || 0) * 100).toFixed(2)}
+                  onChange={e => setConfig(c => ({ ...c, comision: parseFloat(e.target.value) / 100 || 0 }))}
+                  min={0}
+                  max={5}
+                  step={0.01}
+                />
+                <span style={{ fontSize: 11, color: "var(--gris)" }}>
+                  Actualmente: {((config.comision || 0) * 100).toFixed(2)}% → sobre ${fmt(config.capital_inicial)} = {fmt(config.capital_inicial * (config.comision || 0))} por operación de capital completo
+                </span>
+              </label>
+              <button
+                className="btn btn-primary"
+                style={{ alignSelf: "flex-start", marginTop: 4 }}
+                disabled={savingConfig}
+                onClick={() => guardarConfig({
+                  nombre_experiencia: config.nombre_experiencia,
+                  capital_inicial: config.capital_inicial,
+                  comision: config.comision,
+                })}
+              >
+                {savingConfig ? "Guardando..." : "💾 Guardar parámetros"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
