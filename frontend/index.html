@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Simulador de Cartera — FCE UNICEN</title>
+  <title>Simulador de Cartera — Económicas UNICEN</title>
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -38,7 +38,8 @@
       height: 56px;
       box-shadow: 0 2px 8px rgba(0,0,0,.2);
     }
-    .nav-brand { font-size: 16px; font-weight: 700; letter-spacing: .5px; }
+    .nav-brand { font-size: 16px; font-weight: 700; letter-spacing: .5px; display: flex; align-items: center; gap: 10px; }
+    .nav-logo { height: 32px; width: auto; display: block; }
     .nav-right { display: flex; align-items: center; gap: 16px; font-size: 13px; }
     .nav-tabs { display: flex; gap: 4px; }
     .tab-btn {
@@ -231,6 +232,8 @@
     .opcion {
       display: flex;
       align-items: center;
+      justify-content: flex-start;
+      text-align: left;
       gap: 12px;
       padding: 11px 16px;
       border: 2px solid #e5e7eb;
@@ -267,7 +270,7 @@
       transition: opacity .15s;
     }
     .opcion.selected .opcion-radio-dot { opacity: 1; }
-    .opcion-texto { font-size: 14px; line-height: 1.4; }
+    .opcion-texto { font-size: 14px; line-height: 1.4; flex: 1; }
     /* Noticia */
     .noticia-card {
       border-left: 4px solid var(--azul);
@@ -300,6 +303,41 @@
     }
     .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
     .modal-actions { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+    /* Encuesta bloqueada */
+    .encuesta-bloqueada {
+      max-width: 960px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+    .encuesta-bloqueada-card {
+      background: var(--blanco);
+      border-radius: 16px;
+      box-shadow: var(--sombra);
+      padding: 48px 32px;
+      text-align: center;
+    }
+    .encuesta-bloqueada-icon { font-size: 48px; margin-bottom: 16px; }
+    .encuesta-bloqueada-titulo { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+    .encuesta-bloqueada-desc { color: var(--gris); font-size: 14px; line-height: 1.6; max-width: 360px; margin: 0 auto 24px; }
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(0);
+      background: #1e293b;
+      color: white;
+      padding: 12px 22px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 4px 20px rgba(0,0,0,.25);
+      z-index: 9999;
+      white-space: nowrap;
+      animation: toastIn .2s ease, toastOut .3s ease 2.5s forwards;
+    }
+    @keyframes toastIn  { from { opacity:0; transform: translateX(-50%) translateY(12px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+    @keyframes toastOut { from { opacity:1; } to { opacity:0; transform: translateX(-50%) translateY(8px); } }
     /* Spinner */
     .spinner {
       display: inline-block;
@@ -412,9 +450,13 @@ function LoginPage({ onLogin }) {
   return (
     <div className="login-wrap">
       <div className="login-card">
-        <div className="login-logo">📊</div>
+        <div className="login-logo">
+          <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" style={{width:40,height:40}}>
+            <text x="60" y="82" textAnchor="middle" fontFamily="Arial,sans-serif" fontWeight="900" fontSize="72" fill="white">e</text>
+          </svg>
+        </div>
         <div className="login-title">Simulador de Cartera</div>
-        <div className="login-sub">FCE · UNICEN · Tandil</div>
+        <div className="login-sub">Económicas · UNICEN · Tandil</div>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
           <button className={`btn ${modo === "grupo" ? "btn-primary" : "btn-outline"}`} style={{ flex: 1 }}
@@ -1329,10 +1371,30 @@ function PanelDocente({ token }) {
   );
 }
 
+// ── BANNER ENCUESTA PENDIENTE ──────────────────────────────────────────────
+function EncuestaPendiente({ onIrEncuesta }) {
+  return (
+    <div className="encuesta-bloqueada">
+      <div className="encuesta-bloqueada-card">
+        <div className="encuesta-bloqueada-icon">🔒</div>
+        <div className="encuesta-bloqueada-titulo">Completá la encuesta de perfil primero</div>
+        <p className="encuesta-bloqueada-desc">
+          Para operar en el simulador necesitás determinar el perfil inversor de tu grupo.
+          Solo lleva un par de minutos.
+        </p>
+        <button className="btn btn-primary" onClick={onIrEncuesta}>
+          Ir a la encuesta →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── APP PRINCIPAL ──────────────────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(null);
   const [tab, setTab] = useState("cartera");
+  const [toast, setToast] = useState(null);
 
   function handleLogin(data) {
     setSession(data);
@@ -1351,12 +1413,21 @@ function App() {
     setTab("cartera");
   }
 
+  function cambiarTab(id) {
+    if (!session.encuesta_completada && id !== "encuesta") {
+      setTab(id); // mostramos el banner en esa tab
+      setToast("⚠️ Completá la encuesta de perfil para acceder");
+      setTimeout(() => setToast(null), 2800);
+    } else {
+      setTab(id);
+    }
+  }
+
   if (!session) return <LoginPage onLogin={handleLogin} />;
 
   const esDocente = session.role === "docente";
   const perfil = session.perfil_riesgo;
 
-  // Tabs para grupo
   const tabsGrupo = [
     { id: "cartera", label: "Mi Cartera" },
     { id: "operar", label: "Operar" },
@@ -1368,13 +1439,19 @@ function App() {
   return (
     <>
       <nav className="nav">
-        <div className="nav-brand">📊 Simulador de Cartera · FCE UNICEN</div>
+        <div className="nav-brand">
+          <svg className="nav-logo" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="60" cy="60" r="60" fill="white"/>
+            <text x="60" y="78" textAnchor="middle" fontFamily="Arial,sans-serif" fontWeight="900" fontSize="52" fill="#1452EF">e</text>
+          </svg>
+          Económicas UNICEN
+        </div>
         <div className="nav-right">
           {!esDocente && (
             <div className="nav-tabs">
               {tabsGrupo.map(t => (
                 <button key={t.id} className={`tab-btn ${tab === t.id ? "active" : ""}`}
-                  onClick={() => setTab(t.id)}>{t.label}</button>
+                  onClick={() => cambiarTab(t.id)}>{t.label}</button>
               ))}
             </div>
           )}
@@ -1386,9 +1463,14 @@ function App() {
         </div>
       </nav>
 
+      {toast && <div className="toast">{toast}</div>}
+
       {esDocente && <PanelDocente token={session.access_token} />}
       {!esDocente && tab === "encuesta" && !session.encuesta_completada && (
         <EncuestaPage token={session.access_token} onComplete={encuestaCompletada} />
+      )}
+      {!esDocente && tab !== "encuesta" && !session.encuesta_completada && (
+        <EncuestaPendiente onIrEncuesta={() => setTab("encuesta")} />
       )}
       {!esDocente && tab === "cartera" && session.encuesta_completada && (
         <MiCartera token={session.access_token} perfil={perfil} />
