@@ -488,7 +488,7 @@ def listar_instrumentos(db: Session = Depends(get_db), _=Depends(get_current_doc
 
 class InstrumentoUpdateIn(BaseModel):
     sector: Optional[str] = None
-    tendencia_esperada: Optional[str] = None   # alcista / bajista / neutro
+    tendencia_esperada: Optional[float] = None  # % total al vencimiento, ej: 0.15 = +15%, -0.08 = -8%
 
 
 @router.put("/instrumentos/{instrumento_id}")
@@ -592,6 +592,8 @@ def get_config(db: Session = Depends(get_db), _=Depends(get_current_docente)):
         "capital_inicial": config.capital_inicial,
         "comision": config.comision,
         "activo": config.activo,
+        "fecha_inicio": config.fecha_inicio.isoformat() if config.fecha_inicio else None,
+        "fecha_fin": config.fecha_fin.isoformat() if config.fecha_fin else None,
     }
 
 
@@ -600,6 +602,8 @@ class ConfigIn(BaseModel):
     capital_inicial: Optional[float] = None
     comision: Optional[float] = None
     activo: Optional[bool] = None
+    fecha_inicio: Optional[str] = None   # ISO 8601, ej: "2024-11-01T08:00"
+    fecha_fin: Optional[str] = None      # ISO 8601, ej: "2024-12-15T23:59"
 
 
 @router.put("/configuracion")
@@ -610,7 +614,16 @@ def update_config(body: ConfigIn, db: Session = Depends(get_db), _=Depends(get_c
         db.add(config)
 
     estaba_inactivo = not config.activo
-    for field, val in body.dict(exclude_none=True).items():
+    from datetime import datetime as _dt
+    data = body.dict(exclude_none=True)
+    # Parsear fechas ISO 8601 a datetime antes de guardar
+    for fecha_field in ("fecha_inicio", "fecha_fin"):
+        if fecha_field in data:
+            try:
+                data[fecha_field] = _dt.fromisoformat(data[fecha_field])
+            except (ValueError, TypeError):
+                data.pop(fecha_field)
+    for field, val in data.items():
         setattr(config, field, val)
     db.commit()
 

@@ -22,6 +22,8 @@ class Configuracion(Base):
     comision = Column(Float, default=0.005)          # 0.5%
     tasa_caucion = Column(Float, default=0.60)       # TNA 60% para cauciones
     activo = Column(Boolean, default=True)
+    fecha_inicio = Column(DateTime, nullable=True)       # inicio de la simulación
+    fecha_fin = Column(DateTime, nullable=True)          # fin previsto de la simulación
     creado_en = Column(DateTime, default=datetime.utcnow)
 
 
@@ -70,7 +72,7 @@ class Instrumento(Base):
     nombre = Column(String(200), nullable=False)
     tipo = Column(String(50), default="accion")          # accion / bono / cedear / fci
     sector = Column(String(100), nullable=True)          # sector de industria
-    tendencia_esperada = Column(String(20), nullable=True)  # alcista / bajista / neutro
+    tendencia_esperada = Column(Float, nullable=True)       # % total al vencimiento, ej: 0.15 = +15%, -0.08 = -8%
     precio_inicial = Column(Float, nullable=False)
     precio_actual = Column(Float, nullable=False)
     precio_sesion = Column(Float, nullable=True)         # precio al inicio de la sesión actual
@@ -237,7 +239,9 @@ def init_db():
     migrations = [
         "ALTER TABLE instrumentos ADD COLUMN precio_sesion FLOAT",
         "ALTER TABLE instrumentos ADD COLUMN sector VARCHAR(100)",
-        "ALTER TABLE instrumentos ADD COLUMN tendencia_esperada VARCHAR(20)",
+        "ALTER TABLE instrumentos ADD COLUMN tendencia_esperada FLOAT",
+        "ALTER TABLE configuracion ADD COLUMN fecha_inicio DATETIME",
+        "ALTER TABLE configuracion ADD COLUMN fecha_fin DATETIME",
     ]
     with engine.connect() as conn:
         for sql in migrations:

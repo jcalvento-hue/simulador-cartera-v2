@@ -1,0 +1,1037 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Manual del Simulador</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;600&display=swap">
+
+<style>
+/* Layout: sidebar nav + scrollable content, stacks to one column on mobile */
+:root {
+  --bg: #F8F7F4;
+  --bg2: #FFFFFF;
+  --fg: #1A1A18;
+  --fg2: #5C5C56;
+  --border: #E2E0DA;
+  --accent: #1B4D8E;
+  --accent-light: #E8EEF7;
+  --accent2: #2E8B57;
+  --accent2-light: #E8F4ED;
+  --warn: #8B4513;
+  --warn-light: #FDF0E8;
+  --tag-a: #1B4D8E;
+  --tag-b: #4A0E8F;
+  --tag-c: #1A6B3C;
+  --tag-f: #8B4513;
+  --tag-cau: #6B3878;
+  --font-display: 'IBM Plex Serif', Georgia, serif;
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141412;
+    --bg2: #1E1E1B;
+    --fg: #E8E7E2;
+    --fg2: #9A9A90;
+    --border: #2E2E28;
+    --accent: #4A86D4;
+    --accent-light: #1A2840;
+    --accent2: #3DAA6A;
+    --accent2-light: #142A1E;
+    --warn: #D4834A;
+    --warn-light: #2A1A0E;
+    --tag-a: #4A86D4;
+    --tag-b: #9A6ED4;
+    --tag-c: #3DAA6A;
+    --tag-f: #D4834A;
+    --tag-cau: #B07AC8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141412;
+  --bg2: #1E1E1B;
+  --fg: #E8E7E2;
+  --fg2: #9A9A90;
+  --border: #2E2E28;
+  --accent: #4A86D4;
+  --accent-light: #1A2840;
+  --accent2: #3DAA6A;
+  --accent2-light: #142A1E;
+  --warn: #D4834A;
+  --warn-light: #2A1A0E;
+  --tag-a: #4A86D4;
+  --tag-b: #9A6ED4;
+  --tag-c: #3DAA6A;
+  --tag-f: #D4834A;
+  --tag-cau: #B07AC8;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.65;
+  margin: 0;
+  padding-inline: 0;
+  padding-block: 0;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+}
+
+/* Header */
+.site-header {
+  grid-column: 1 / -1;
+  background: var(--accent);
+  color: #fff;
+  padding: 20px 28px;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.site-header h1 {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.site-header .subtitle {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  margin: 0;
+}
+.badge-version {
+  margin-left: auto;
+  font-size: 0.72rem;
+  background: rgba(255,255,255,0.18);
+  border-radius: 20px;
+  padding: 2px 10px;
+  letter-spacing: 0.04em;
+}
+
+/* Sidebar nav */
+.sidebar {
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  padding: 24px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.sidebar-section {
+  margin-bottom: 8px;
+}
+.sidebar-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fg2);
+  padding: 4px 20px 2px;
+}
+.sidebar a {
+  display: block;
+  padding: 5px 20px;
+  color: var(--fg2);
+  text-decoration: none;
+  font-size: 0.83rem;
+  border-left: 3px solid transparent;
+  transition: all 0.12s;
+}
+.sidebar a:hover, .sidebar a.active {
+  color: var(--accent);
+  background: var(--accent-light);
+  border-left-color: var(--accent);
+}
+
+/* Main content */
+.content {
+  padding: 36px 40px 80px;
+  max-width: 720px;
+}
+
+h2 {
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+  font-weight: 600;
+  margin: 0 0 8px;
+  text-wrap: balance;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 28px 0 8px;
+  color: var(--fg);
+}
+h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg2);
+  margin: 20px 0 6px;
+}
+p { margin: 0 0 14px; color: var(--fg); }
+p:last-child { margin-bottom: 0; }
+a { color: var(--accent); }
+
+.section-sep {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 40px 0;
+}
+
+/* Section anchor */
+.section { scroll-margin-top: 24px; }
+
+/* Callout boxes */
+.callout {
+  border-radius: var(--r);
+  padding: 14px 16px;
+  margin: 16px 0;
+  font-size: 0.88rem;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.callout-icon { font-size: 1.1rem; flex-shrink: 0; line-height: 1.5; }
+.callout.info { background: var(--accent-light); border-left: 3px solid var(--accent); }
+.callout.warn { background: var(--warn-light); border-left: 3px solid var(--warn); }
+.callout.tip { background: var(--accent2-light); border-left: 3px solid var(--accent2); }
+.callout p { margin: 0; color: var(--fg); }
+.callout strong { color: var(--fg); }
+
+/* Steps */
+.steps { margin: 16px 0; padding: 0; list-style: none; }
+.steps li {
+  display: flex;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.steps li:last-child { border-bottom: none; }
+.step-num {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.steps li strong { display: block; color: var(--fg); margin-bottom: 2px; }
+.steps li span { color: var(--fg2); }
+
+/* Instrument tags */
+.tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.tag-a { background: color-mix(in srgb, var(--tag-a) 15%, transparent); color: var(--tag-a); }
+.tag-b { background: color-mix(in srgb, var(--tag-b) 15%, transparent); color: var(--tag-b); }
+.tag-c { background: color-mix(in srgb, var(--tag-c) 15%, transparent); color: var(--tag-c); }
+.tag-f { background: color-mix(in srgb, var(--tag-f) 15%, transparent); color: var(--tag-f); }
+.tag-cau { background: color-mix(in srgb, var(--tag-cau) 15%, transparent); color: var(--tag-cau); }
+
+/* Instrument grid */
+.inst-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+.inst-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 14px;
+}
+.inst-card h5 {
+  margin: 0 0 4px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.inst-card p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--fg2);
+  line-height: 1.45;
+}
+
+/* URL display */
+.url-box {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+}
+.url-text {
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: var(--accent);
+  flex: 1;
+  word-break: break-all;
+}
+.copy-btn {
+  background: var(--accent-light);
+  color: var(--accent);
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--font-body);
+  transition: opacity 0.15s;
+}
+.copy-btn:hover { opacity: 0.8; }
+
+/* Credential table */
+.cred-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  margin: 14px 0;
+  min-width: 0;
+}
+.cred-table th {
+  text-align: left;
+  padding: 8px 12px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.cred-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.cred-table tr:last-child td { border-bottom: none; }
+.mono { font-family: monospace; background: var(--bg); padding: 2px 6px; border-radius: 3px; }
+
+/* Tab pills */
+.tabs-demo {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.tab-pill {
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--fg2);
+}
+.tab-pill.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* Screen mockup */
+.screen-mock {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 16px 0;
+}
+.screen-bar {
+  background: var(--accent);
+  padding: 8px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.screen-body {
+  padding: 14px 16px;
+  font-size: 0.83rem;
+}
+.screen-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+.screen-row:last-child { border-bottom: none; }
+.screen-val { font-variant-numeric: tabular-nums; font-weight: 600; }
+.screen-val.up { color: var(--accent2); }
+.screen-val.down { color: #c0392b; }
+
+/* KPI row */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 14px 0;
+}
+.kpi {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  text-align: center;
+}
+.kpi-label { font-size: 0.72rem; color: var(--fg2); text-transform: uppercase; letter-spacing: 0.06em; }
+.kpi-value { font-size: 1.1rem; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+/* Responsive */
+@media (max-width: 700px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: static;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 0;
+  }
+  .sidebar a { display: inline-block; padding: 4px 14px; }
+  .content { padding: 24px 20px 60px; }
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .inst-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="layout">
+
+  <header class="site-header">
+    <h1>Simulador de Cartera FCE-UNICEN</h1>
+    <p class="subtitle">Manual del Usuario</p>
+    <span class="badge-version">v2 · 2025</span>
+  </header>
+
+  <nav class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Inicio</div>
+      <a href="#acceso" onclick="activate(this)">Acceso y primer uso</a>
+      <a href="#roles" onclick="activate(this)">Roles del sistema</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Docente</div>
+      <a href="#docente-login" onclick="activate(this)">Iniciar sesión</a>
+      <a href="#docente-grupos" onclick="activate(this)">Crear grupos</a>
+      <a href="#docente-csv" onclick="activate(this)">Cargar alumnos (CSV)</a>
+      <a href="#docente-asignar" onclick="activate(this)">Asignar alumnos</a>
+      <a href="#docente-noticias" onclick="activate(this)">Publicar noticias</a>
+      <a href="#docente-ranking" onclick="activate(this)">Ranking y reportes</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Grupo</div>
+      <a href="#grupo-login" onclick="activate(this)">Iniciar sesión</a>
+      <a href="#grupo-encuesta" onclick="activate(this)">Encuesta de perfil</a>
+      <a href="#grupo-cartera" onclick="activate(this)">Mi Cartera</a>
+      <a href="#grupo-operar" onclick="activate(this)">Operar</a>
+      <a href="#grupo-cauciones" onclick="activate(this)">Cauciones</a>
+      <a href="#grupo-noticias" onclick="activate(this)">Noticias</a>
+      <a href="#grupo-ranking" onclick="activate(this)">Ranking</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Referencia</div>
+      <a href="#instrumentos" onclick="activate(this)">Instrumentos</a>
+      <a href="#preguntas" onclick="activate(this)">Preguntas frecuentes</a>
+    </div>
+  </nav>
+
+  <main class="content">
+
+    <!-- ACCESO -->
+    <section class="section" id="acceso">
+      <h2>Acceso al simulador</h2>
+      <p>El simulador funciona completamente en el navegador, sin necesidad de instalar ningún programa. Ingresá desde cualquier dispositivo.</p>
+
+      <div class="url-box">
+        <span class="url-text" id="url-text">https://simulador-cartera-v2.onrender.com</span>
+        <button class="copy-btn" onclick="copyUrl()">Copiar</button>
+      </div>
+
+      <div class="callout warn">
+        <span class="callout-icon">⏳</span>
+        <p><strong>Primer carga puede tardar 30–60 segundos.</strong> El servidor se "duerme" cuando no hay actividad. Si la pantalla queda en blanco o muestra un spinner, esperá un momento y volvé a cargar la página. Una vez activo, responde al instante.</p>
+      </div>
+
+      <div class="callout tip">
+        <span class="callout-icon">📱</span>
+        <p>El simulador está optimizado para desktop, pero funciona en celular. Si vas a operar, se recomienda girar el teléfono en horizontal para ver mejor las tablas.</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- ROLES -->
+    <section class="section" id="roles">
+      <h2>Roles del sistema</h2>
+      <p>Hay dos tipos de usuarios con experiencias distintas:</p>
+
+      <div class="inst-grid">
+        <div class="inst-card">
+          <h5>🎓 Docente</h5>
+          <p>Administra el juego: crea grupos, carga alumnos desde el SIU, publica noticias y consulta reportes y ranking.</p>
+        </div>
+        <div class="inst-card">
+          <h5>👥 Grupo</h5>
+          <p>Participa en la simulación: completa el perfil inversor, opera instrumentos financieros y compite en el ranking.</p>
+        </div>
+      </div>
+
+      <p>El docente tiene una sola cuenta global. Los grupos se identifican con un <strong>código de acceso</strong> único que el docente les entrega.</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- DOCENTE LOGIN -->
+    <section class="section" id="docente-login">
+      <h2>Docente — Iniciar sesión</h2>
+      <p>Hacé clic en <strong>"Soy docente"</strong> en la pantalla inicial e ingresá las credenciales del sistema:</p>
+
+      <table class="cred-table">
+        <thead><tr><th>Campo</th><th>Valor</th></tr></thead>
+        <tbody>
+          <tr><td>Usuario</td><td><span class="mono">docente</span></td></tr>
+          <tr><td>Contraseña</td><td><span class="mono">simulador2024</span></td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout info">
+        <span class="callout-icon">ℹ️</span>
+        <p>Estas credenciales son las del simulador, no de ningún sistema externo. Podés compartirlas con co-docentes o ayudantes.</p>
+      </div>
+
+      <p>Una vez autenticado accedés al <strong>Panel Docente</strong> con las secciones de gestión agrupadas en pestañas.</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- DOCENTE GRUPOS -->
+    <section class="section" id="docente-grupos">
+      <h2>Docente — Crear grupos</h2>
+      <p>Desde el panel docente, pestaña <strong>Grupos</strong>, encontrás el formulario de creación.</p>
+
+      <ol class="steps">
+        <li>
+          <span class="step-num">1</span>
+          <div><strong>Nombre del grupo</strong><span>Elegí un nombre descriptivo (ej. "Grupo A – 2025"). No se puede cambiar después.</span></div>
+        </li>
+        <li>
+          <span class="step-num">2</span>
+          <div><strong>Capital inicial</strong><span>Monto en pesos que tendrá el grupo para operar. El capital es ficticio; podés poner el valor que mejor se ajuste a la consigna (ej. $1.000.000).</span></div>
+        </li>
+        <li>
+          <span class="step-num">3</span>
+          <div><strong>Crear</strong><span>El sistema genera automáticamente un <em>código de acceso</em> único de 6 caracteres. Ese código se lo entregás a los alumnos.</span></div>
+        </li>
+      </ol>
+
+      <div class="screen-mock">
+        <div class="screen-bar">📋 Tabla de grupos creados</div>
+        <div class="screen-body">
+          <div class="screen-row"><span>Grupo A – 2025</span><span class="mono tag tag-a">GRP-X7K</span><span class="screen-val">$1.000.000</span></div>
+          <div class="screen-row"><span>Grupo B – 2025</span><span class="mono tag tag-b">GRP-M3Q</span><span class="screen-val">$1.000.000</span></div>
+          <div class="screen-row"><span>Grupo C – 2025</span><span class="mono tag tag-c">GRP-P9F</span><span class="screen-val">$1.000.000</span></div>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <span class="callout-icon">⚠️</span>
+        <p><strong>Nota sobre persistencia:</strong> el simulador usa una base de datos en memoria en el servidor gratuito. Cada vez que el servidor se reinicia (tras períodos sin actividad), los datos se recrean automáticamente con los instrumentos del mercado, pero <strong>los grupos y operaciones se pierden</strong>. Se recomienda crear los grupos y comenzar a operar en la misma sesión de clase.</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- DOCENTE CSV -->
+    <section class="section" id="docente-csv">
+      <h2>Docente — Cargar alumnos desde CSV</h2>
+      <p>Podés importar el listado de alumnos directamente desde el archivo que exporta el SIU-Guaraní, sin necesidad de reformatear el archivo.</p>
+
+      <h3>Formato esperado</h3>
+      <p>El CSV debe tener al menos estas columnas (el orden puede variar, se detectan por nombre):</p>
+      <ul style="margin:8px 0 14px; padding-left:20px; font-size:0.88rem; color:var(--fg2);">
+        <li><span class="mono">legajo</span> — número de legajo del alumno</li>
+        <li><span class="mono">apellido</span> — apellido(s)</li>
+        <li><span class="mono">nombre</span> — nombre(s)</li>
+      </ul>
+
+      <ol class="steps">
+        <li>
+          <span class="step-num">1</span>
+          <div><strong>Exportar desde SIU-Guaraní</strong><span>En el SIU, ir a la cursada correspondiente y exportar el listado como CSV o TXT separado por punto y coma.</span></div>
+        </li>
+        <li>
+          <span class="step-num">2</span>
+          <div><strong>Subir el archivo</strong><span>En el panel docente, pestaña <em>Alumnos</em>, usar el botón "Elegir archivo" y seleccionar el CSV exportado.</span></div>
+        </li>
+        <li>
+          <span class="step-num">3</span>
+          <div><strong>Confirmar importación</strong><span>El sistema muestra un resumen de cuántos alumnos se importaron. Los alumnos quedan en estado "sin asignar" hasta que los vincules a un grupo.</span></div>
+        </li>
+      </ol>
+
+      <div class="callout tip">
+        <span class="callout-icon">💡</span>
+        <p>Si el archivo tiene columnas adicionales (comisión, condición, etc.), el simulador las ignora. Solo importa legajo, nombre y apellido.</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- DOCENTE ASIGNAR -->
+    <section class="section" id="docente-asignar">
+      <h2>Docente — Asignar alumnos a grupos</h2>
+      <p>Una vez importados los alumnos, asignales un grupo desde la misma pestaña <strong>Alumnos</strong>.</p>
+
+      <ol class="steps">
+        <li>
+          <span class="step-num">1</span>
+          <div><strong>Localizar al alumno</strong><span>La tabla muestra todos los alumnos importados con su legajo y nombre. Los que aún no tienen grupo aparecen como "Sin grupo".</span></div>
+        </li>
+        <li>
+          <span class="step-num">2</span>
+          <div><strong>Seleccionar grupo</strong><span>En la columna de grupo, elegí del desplegable el grupo al que corresponde ese alumno.</span></div>
+        </li>
+        <li>
+          <span class="step-num">3</span>
+          <div><strong>Guardar</strong><span>El cambio se aplica de inmediato. No hay confirmación adicional: el grupo queda registrado al instante.</span></div>
+        </li>
+      </ol>
+
+      <div class="callout info">
+        <span class="callout-icon">ℹ️</span>
+        <p>Un alumno puede reasignarse a otro grupo en cualquier momento. Las operaciones pasadas quedan registradas en el grupo anterior.</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- DOCENTE NOTICIAS -->
+    <section class="section" id="docente-noticias">
+      <h2>Docente — Publicar noticias y análisis</h2>
+      <p>Las noticias simulan los eventos de mercado que los grupos deben interpretar para tomar decisiones de inversión. Publicarlas es parte central de la dinámica del juego.</p>
+
+      <ol class="steps">
+        <li>
+          <span class="step-num">1</span>
+          <div><strong>Ir a pestaña Noticias</strong><span>Dentro del panel docente, accedé a la sección de publicación de noticias.</span></div>
+        </li>
+        <li>
+          <span class="step-num">2</span>
+          <div><strong>Redactar</strong><span>Escribí el titular y el cuerpo de la noticia. Podés incluir datos, porcentajes o referencias a instrumentos del mercado para guiar las decisiones de los grupos.</span></div>
+        </li>
+        <li>
+          <span class="step-num">3</span>
+          <div><strong>Publicar</strong><span>La noticia queda visible de inmediato para todos los grupos en su pestaña "Noticias".</span></div>
+        </li>
+      </ol>
+
+      <div class="callout tip">
+        <span class="callout-icon">💡</span>
+        <p><strong>Sugerencia pedagógica:</strong> publicá noticias que generen dilemas claros: una noticia positiva para el sector energético puede beneficiar a acciones como YPF o CEPU pero perjudicar a los bonos soberanos. Esto obliga a los grupos a analizar su cartera actual antes de actuar.</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- DOCENTE RANKING -->
+    <section class="section" id="docente-ranking">
+      <h2>Docente — Ranking y reportes</h2>
+      <p>La pestaña <strong>Ranking</strong> muestra en tiempo real la posición de cada grupo ordenada por rendimiento total de la cartera.</p>
+
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="kpi-label">Capital inicial</div>
+          <div class="kpi-value">$1.000.000</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Patrimonio actual</div>
+          <div class="kpi-value" style="color:var(--accent2)">$1.142.830</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Rendimiento</div>
+          <div class="kpi-value" style="color:var(--accent2)">+14,28%</div>
+        </div>
+      </div>
+
+      <p>El patrimonio se calcula como <em>capital disponible + valor de mercado de todas las posiciones abiertas + capital bloqueado en cauciones activas</em>. El ranking se actualiza cada 30 segundos junto con los precios de mercado.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">ℹ️</span>
+        <p>El historial de operaciones de cada grupo es visible desde su pestaña <strong>Historial</strong>, donde podés revisar las decisiones tomadas en clase.</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- GRUPO LOGIN -->
+    <section class="section" id="grupo-login">
+      <h2>Grupo — Iniciar sesión</h2>
+      <p>En la pantalla de inicio del simulador, elegí <strong>"Soy alumno / grupo"</strong> e ingresá el código de acceso que te dio el docente.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">🔑</span>
+        <p>El código de acceso tiene 6–8 caracteres y es único para tu grupo. Ejemplo: <span class="mono">GRP-X7K</span>. Todos los integrantes del grupo usan el mismo código.</p>
+      </div>
+
+      <p>Una vez dentro, la sesión queda activa mientras el navegador esté abierto. Si cerrás el navegador, al volver ingresás con el mismo código.</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- GRUPO ENCUESTA -->
+    <section class="section" id="grupo-encuesta">
+      <h2>Grupo — Encuesta de perfil inversor</h2>
+      <p>Antes de empezar a operar, todos los grupos deben completar una encuesta de perfil de riesgo. Es obligatoria y se realiza una sola vez.</p>
+
+      <p>La encuesta incluye preguntas sobre:</p>
+      <ul style="margin:8px 0 14px; padding-left:20px; font-size:0.88rem; color:var(--fg2);">
+        <li>Horizonte de inversión del grupo</li>
+        <li>Tolerancia a la volatilidad (fluctuaciones de precios)</li>
+        <li>Objetivo financiero (preservar capital vs. maximizar ganancias)</li>
+        <li>Experiencia previa en mercados financieros</li>
+      </ul>
+
+      <p>Al finalizar, el sistema clasifica al grupo en uno de tres perfiles:</p>
+
+      <div class="inst-grid">
+        <div class="inst-card">
+          <h5><span class="tag tag-c">Conservador</span></h5>
+          <p>Prefiere proteger el capital. Tolera poca volatilidad. Horizonte de corto plazo.</p>
+        </div>
+        <div class="inst-card">
+          <h5><span class="tag tag-f">Moderado</span></h5>
+          <p>Busca equilibrio entre riesgo y rendimiento. Horizonte de mediano plazo.</p>
+        </div>
+        <div class="inst-card">
+          <h5><span class="tag tag-b">Agresivo</span></h5>
+          <p>Acepta alta volatilidad a cambio de mayor potencial de ganancia. Largo plazo.</p>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <span class="callout-icon">⚠️</span>
+        <p>Si operás un instrumento que no coincide con tu perfil (ej. un grupo conservador compra CEDEARs de alta volatilidad), el sistema mostrará un <strong>aviso de advertencia</strong>. La operación igual puede realizarse, pero queda registrada.</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- GRUPO CARTERA -->
+    <section class="section" id="grupo-cartera">
+      <h2>Grupo — Mi Cartera</h2>
+      <p>La pestaña <strong>Mi Cartera</strong> es el resumen patrimonial del grupo. Muestra el estado completo de las inversiones en tiempo real.</p>
+
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="kpi-label">Capital disponible</div>
+          <div class="kpi-value">$320.000</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Inversiones</div>
+          <div class="kpi-value">$542.000</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">En cauciones</div>
+          <div class="kpi-value" style="color:#9a59b5">$100.000</div>
+        </div>
+      </div>
+
+      <p>El patrimonio total se calcula sumando capital disponible + valor de mercado de cada posición + capital bloqueado en cauciones activas.</p>
+
+      <h3>Tabla de posiciones</h3>
+      <div class="screen-mock">
+        <div class="screen-bar">📊 Posiciones abiertas</div>
+        <div class="screen-body">
+          <div class="screen-row">
+            <span><span class="tag tag-a">Acción</span> GGAL</span>
+            <span>50 títulos</span>
+            <span class="screen-val up">$3.420 (+8,2%)</span>
+          </div>
+          <div class="screen-row">
+            <span><span class="tag tag-b">Bono</span> AL30</span>
+            <span>100 V/N</span>
+            <span class="screen-val down">$2.180 (−1,4%)</span>
+          </div>
+          <div class="screen-row">
+            <span><span class="tag tag-f">FCI</span> FCICONV</span>
+            <span>1.250 cuotas</span>
+            <span class="screen-val up">$401.200 (+0,1%)</span>
+          </div>
+        </div>
+      </div>
+
+      <p>Los precios se actualizan cada 30 segundos mediante una simulación de movimiento browniano geométrico. Las variaciones se muestran respecto al precio inicial de la sesión.</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- GRUPO OPERAR -->
+    <section class="section" id="grupo-operar">
+      <h2>Grupo — Operar</h2>
+      <p>La pestaña <strong>Operar</strong> es donde se realizan todas las compras y ventas de instrumentos financieros.</p>
+
+      <div class="tabs-demo">
+        <span class="tab-pill active">Todos</span>
+        <span class="tab-pill">Acciones</span>
+        <span class="tab-pill">Bonos</span>
+        <span class="tab-pill">CEDEARs</span>
+        <span class="tab-pill">FCI</span>
+      </div>
+
+      <p>Usá los filtros por tipo para encontrar más fácilmente el instrumento que buscás. La tabla muestra precio actual, variación del día y el tipo de cada instrumento.</p>
+
+      <h3>Cómo comprar o vender</h3>
+      <ol class="steps">
+        <li>
+          <span class="step-num">1</span>
+          <div><strong>Seleccionar instrumento</strong><span>Hacé clic en el instrumento de la lista. Se abre el panel de operación a la derecha (o debajo en mobile).</span></div>
+        </li>
+        <li>
+          <span class="step-num">2</span>
+          <div><strong>Ingresar cantidad o monto</strong><span>Para acciones, bonos y CEDEARs: ingresás la <em>cantidad de títulos</em>. Para FCI: ingresás el <em>monto en pesos</em> que querés invertir y el sistema calcula automáticamente cuántas cuotas partes recibís.</span></div>
+        </li>
+        <li>
+          <span class="step-num">3</span>
+          <div><strong>Elegir Comprar o Vender</strong><span>No podés vender más títulos de los que tenés en cartera. El sistema valida el capital disponible antes de ejecutar.</span></div>
+        </li>
+        <li>
+          <span class="step-num">4</span>
+          <div><strong>Confirmar</strong><span>La operación se ejecuta al precio actual de mercado y queda registrada en el Historial.</span></div>
+        </li>
+      </ol>
+
+      <div class="callout warn">
+        <span class="callout-icon">⚠️</span>
+        <p>Las operaciones son <strong>irreversibles</strong> una vez confirmadas. El precio de ejecución es el precio de mercado en el momento exacto de la confirmación, que puede diferir del precio que veías al abrir el panel si el mercado actualizó en esos segundos.</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- GRUPO CAUCIONES -->
+    <section class="section" id="grupo-cauciones">
+      <h2>Grupo — Cauciones</h2>
+      <p>Las cauciones son colocaciones a plazo fijo. El grupo inmoviliza capital durante un período determinado a cambio de una tasa de interés garantizada.</p>
+
+      <h3>Cómo constituir una caución</h3>
+      <ol class="steps">
+        <li>
+          <span class="step-num">1</span>
+          <div><strong>Ir a pestaña Cauciones</strong><span>Solo visible una vez completada la encuesta de perfil.</span></div>
+        </li>
+        <li>
+          <span class="step-num">2</span>
+          <div><strong>Ingresar monto</strong><span>El monto mínimo es $1.000. No puede superar tu capital disponible.</span></div>
+        </li>
+        <li>
+          <span class="step-num">3</span>
+          <div><strong>Elegir plazo</strong><span>Opciones disponibles: 1, 7, 30, 60 o 90 días (en tiempo simulado del servidor).</span></div>
+        </li>
+        <li>
+          <span class="step-num">4</span>
+          <div><strong>Confirmar</strong><span>El capital se descuenta de inmediato del capital disponible. Al vencimiento, el sistema acredita automáticamente el capital más los intereses.</span></div>
+        </li>
+      </ol>
+
+      <h3>Cálculo de intereses</h3>
+      <p>La tasa nominal anual (TNA) aplicada es del <strong>60%</strong>. Los intereses se calculan como:</p>
+
+      <div class="screen-mock">
+        <div class="screen-bar">🧮 Ejemplo de caución</div>
+        <div class="screen-body" style="font-size:0.85rem;">
+          <div class="screen-row"><span>Monto constituido</span><span class="screen-val">$100.000</span></div>
+          <div class="screen-row"><span>Plazo</span><span class="screen-val">30 días</span></div>
+          <div class="screen-row"><span>TNA</span><span class="screen-val">60%</span></div>
+          <div class="screen-row"><span>Intereses = 100.000 × 0.60 × 30 / 365</span><span class="screen-val" style="color:var(--accent2)">$4.932</span></div>
+          <div class="screen-row"><span><strong>Total a cobrar al vencimiento</strong></span><span class="screen-val up"><strong>$104.932</strong></span></div>
+        </div>
+      </div>
+
+      <div class="callout info">
+        <span class="callout-icon">ℹ️</span>
+        <p>El capital bloqueado en cauciones activas aparece como "En cauciones" en Mi Cartera y se contabiliza en el patrimonio total para el ranking. Al vencimiento, se acredita automáticamente sin necesidad de ninguna acción de tu parte.</p>
+      </div>
+
+      <div class="callout warn">
+        <span class="callout-icon">⚠️</span>
+        <p>Los plazos corren en <strong>tiempo real del servidor</strong>, no en tiempo simulado de mercado. Una caución a 1 día vence en 24 horas reales.</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- GRUPO NOTICIAS -->
+    <section class="section" id="grupo-noticias">
+      <h2>Grupo — Noticias</h2>
+      <p>La pestaña <strong>Noticias</strong> muestra en orden cronológico inverso todos los comunicados que el docente fue publicando durante la simulación.</p>
+      <p>Cada noticia tiene un titular, un cuerpo descriptivo y la fecha y hora de publicación. Leé las noticias antes de operar: están diseñadas para que las interpretés como señales de mercado y tomés decisiones fundamentadas.</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- GRUPO RANKING -->
+    <section class="section" id="grupo-ranking">
+      <h2>Grupo — Ranking e Historial</h2>
+      <p>La pestaña <strong>Ranking</strong> muestra la posición relativa de todos los grupos, ordenados por rendimiento total sobre el capital inicial.</p>
+      <p>La pestaña <strong>Historial</strong> lista todas las operaciones propias del grupo en orden cronológico: instrumento, tipo de operación (compra/venta), cantidad, precio, monto y fecha/hora.</p>
+
+      <div class="callout tip">
+        <span class="callout-icon">💡</span>
+        <p>Usá el historial para revisar las decisiones del grupo y relacionarlas con las noticias publicadas en ese momento. Es una herramienta útil para la presentación final del trabajo.</p>
+      </div>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- INSTRUMENTOS -->
+    <section class="section" id="instrumentos">
+      <h2>Guía de instrumentos</h2>
+      <p>El mercado simulado incluye 27 instrumentos distribuidos en cinco categorías:</p>
+
+      <h3><span class="tag tag-a">Acciones</span> — 12 instrumentos</h3>
+      <p>Títulos de empresas que cotizan en el mercado argentino (BYMA). El precio varía con movimiento browniano geométrico, con volatilidad diferente por empresa.</p>
+      <div class="inst-grid">
+        <div class="inst-card"><h5>GGAL · BMA · BBAR</h5><p>Bancos privados. Alta liquidez y correlación con el sector financiero.</p></div>
+        <div class="inst-card"><h5>YPF · PAMP · CEPU</h5><p>Energía. Sensibles a noticias del sector hidrocarburífero y tarifas.</p></div>
+        <div class="inst-card"><h5>TXAR · ALUA · LOMA</h5><p>Materiales y acero. Correlación con el ciclo industrial.</p></div>
+        <div class="inst-card"><h5>SUPV · TECO2 · CRES</h5><p>Diversificado: seguros, telecomunicaciones, consumo masivo.</p></div>
+      </div>
+
+      <h3><span class="tag tag-b">Bonos soberanos</span> — 6 instrumentos</h3>
+      <p>Deuda del Estado argentino. Precio expresado como porcentaje del valor nominal (V/N). Menor volatilidad que las acciones pero expuestos a riesgo soberano.</p>
+      <div class="inst-grid">
+        <div class="inst-card"><h5>AL30 · GD30</h5><p>Bonos ley argentina / ley nueva York. Vto. 2030. Mayor liquidez.</p></div>
+        <div class="inst-card"><h5>AL35 · AE38</h5><p>Plazo más largo, mayor duration. Mayor sensibilidad a tasas.</p></div>
+        <div class="inst-card"><h5>TX26 · T2X5</h5><p>Bonos ajustados por CER (inflación). Cobertura ante suba de precios.</p></div>
+      </div>
+
+      <h3><span class="tag tag-c">CEDEARs</span> — 6 instrumentos</h3>
+      <p>Certificados de Depósito Argentinos sobre acciones internacionales. Precio en pesos pero exposición a empresas en dólares. Alta volatilidad.</p>
+      <div class="inst-grid">
+        <div class="inst-card"><h5>AAPL · GOOGL · MSFT</h5><p>Tecnología de EE.UU. Alta capitalización, correladas con el sector tech global.</p></div>
+        <div class="inst-card"><h5>AMZN · TSLA · BRKB</h5><p>E-commerce, autos eléctricos y conglomerado financiero (Berkshire). Diversificación sectorial.</p></div>
+      </div>
+
+      <h3><span class="tag tag-f">Fondos Comunes de Inversión</span> — 3 instrumentos</h3>
+      <p>Se compran y venden <strong>por monto en pesos</strong> (no por cantidad de cuotas). El sistema calcula automáticamente las cuotas partes a precio de mercado.</p>
+      <div class="inst-grid">
+        <div class="inst-card"><h5>FCICONV — Conservador</h5><p>TNA implícita 37%. Precio acumula sin volatilidad. Para perfiles conservadores.</p></div>
+        <div class="inst-card"><h5>FCIMOD — Moderado</h5><p>TNA implícita 45%. Pequeña variación aleatoria. Balance riesgo/retorno.</p></div>
+        <div class="inst-card"><h5>FCIAGR — Agresivo</h5><p>TNA implícita 60%. Mayor volatilidad simulada. Para perfiles agresivos.</p></div>
+      </div>
+
+      <h3><span class="tag tag-cau">Cauciones bursátiles</span></h3>
+      <p>Colocaciones a plazo fijo con capital garantizado y tasa fija. TNA del 60%. Plazos: 1, 7, 30, 60 o 90 días. Ver la sección <a href="#grupo-cauciones">Cauciones</a> para el detalle operativo.</p>
+    </section>
+
+    <hr class="section-sep">
+
+    <!-- FAQ -->
+    <section class="section" id="preguntas">
+      <h2>Preguntas frecuentes</h2>
+
+      <h3>¿Qué pasa si la página queda en blanco al entrar?</h3>
+      <p>El servidor gratuito se "duerme" tras períodos de inactividad. Esperá 30–60 segundos y recargá la página. La primera carga puede ser lenta; las siguientes son inmediatas.</p>
+
+      <h3>¿Se pueden perder los datos del grupo?</h3>
+      <p>Sí. La base de datos es efímera: si el servidor se reinicia (generalmente por falta de actividad prolongada), los grupos, operaciones e historial se pierden. El docente deberá recrear los grupos. Se recomienda hacer todas las operaciones de una sesión de clase en una misma franja horaria continua.</p>
+
+      <h3>¿Puedo operar desde el celular?</h3>
+      <p>Sí, el simulador es responsivo. Para ver las tablas completas conviene girar el teléfono en posición horizontal.</p>
+
+      <h3>¿Por qué me sale un aviso de "perfil incompatible"?</h3>
+      <p>El sistema detecta cuando un grupo opera un instrumento cuyo nivel de riesgo no coincide con su perfil inversor declarado en la encuesta. El aviso es informativo; la operación puede realizarse igual. Es parte de la dinámica pedagógica: el docente puede analizar estas decisiones en la discusión posterior.</p>
+
+      <h3>¿Cada cuánto se actualizan los precios?</h3>
+      <p>Los precios de todos los instrumentos se recalculan cada 30 segundos. Los FCI acumulan de forma continua con su TNA respectiva; las acciones, bonos y CEDEARs siguen movimiento browniano geométrico.</p>
+
+      <h3>¿Cómo se cobra una caución?</h3>
+      <p>Automáticamente. Al vencerse el plazo, el servidor acredita el capital más los intereses en el capital disponible del grupo sin que se requiera ninguna acción. El sistema verifica cauciones vencidas cada 30 segundos.</p>
+
+      <h3>¿Qué significa el "Capital inicial" del grupo en el ranking?</h3>
+      <p>Es el monto con el que el docente configuró el grupo al crearlo. El rendimiento porcentual se calcula como (patrimonio actual / capital inicial − 1) × 100.</p>
+    </section>
+
+  </main>
+
+</div>
+
+<script>
+function activate(el) {
+  document.querySelectorAll('.sidebar a').forEach(a => a.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function copyUrl() {
+  const url = document.getElementById('url-text').textContent;
+  const btn = document.querySelector('.copy-btn');
+  navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = '¡Copiado!';
+    setTimeout(() => btn.textContent = 'Copiar', 1800);
+  }).catch(() => {
+    const range = document.createRange();
+    range.selectNode(document.getElementById('url-text'));
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  });
+}
+
+// Highlight active nav item on scroll
+const sections = document.querySelectorAll('.section');
+const links = document.querySelectorAll('.sidebar a');
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const id = entry.target.id;
+      links.forEach(a => {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+      });
+    }
+  });
+}, { threshold: 0.2, rootMargin: '-80px 0px -60% 0px' });
+
+sections.forEach(s => observer.observe(s));
+</script>
+
+</body></html>

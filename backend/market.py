@@ -35,9 +35,31 @@ async def random_walk_loop():
         _procesar_cauciones()
 
 
+def _calcular_mu(inst: "Instrumento", config: "Configuracion") -> float:
+    """
+    Deriva el drift continuo (mu) por intervalo de 30 segundos a partir de la
+    tendencia_esperada (% total al vencimiento) y las fechas de inicio/fin.
+
+    Si no hay tendencia configurada, o faltan fechas, mu = 0 (puro random walk).
+    La fórmula es: mu = ln(1 + tendencia) / N_intervalos
+    donde N_intervalos = duración_total_segundos / 30.
+    """
+    if inst.tendencia_esperada is None:
+        return 0.0
+    if config is None or config.fecha_inicio is None or config.fecha_fin is None:
+        return 0.0
+    duracion_seg = (config.fecha_fin - config.fecha_inicio).total_seconds()
+    if duracion_seg <= 0:
+        return 0.0
+    n_intervalos = duracion_seg / _INTERVALO_SEG
+    # mu por intervalo: ln(1 + pct_total) / n_intervalos
+    return math.log(1.0 + inst.tendencia_esperada) / n_intervalos
+
+
 def _update_prices():
     db: Session = SessionLocal()
     try:
+        config = db.query(Configuracion).first()
         instrumentos = db.query(Instrumento).filter(Instrumento.activo == True).all()
         for inst in instrumentos:
             if inst.tipo == "fci":
@@ -46,12 +68,14 @@ def _update_prices():
                 factor = math.exp(tna * _INTERVALO_SEG / _SEG_ANUALES)
                 nuevo_precio = round(inst.precio_actual * factor, 4)
             else:
-                # Geometric Brownian Motion: acciones, bonos, CEDEARs
+                # Geometric Brownian Motion con drift de tendencia esperada
                 sigma = inst.volatilidad
                 if sigma == 0:
                     continue
+                mu = _calcular_mu(inst, config)
                 epsilon = random.gauss(0, 1)
-                factor = math.exp(-0.5 * sigma**2 + sigma * epsilon)
+                # GBM con drift: exp((mu - 0.5*sigma²) + sigma*ε)
+                factor = math.exp((mu - 0.5 * sigma**2) + sigma * epsilon)
                 nuevo_precio = round(inst.precio_actual * factor, 2)
                 # Floor: no puede caer más del 80% del inicial
                 nuevo_precio = max(nuevo_precio, inst.precio_inicial * 0.20)
