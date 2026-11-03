@@ -513,108 +513,118 @@ function LoginPage({ onLogin }) {
   );
 }
 
-// ── ENCUESTA PERFIL DE RIESGO ──────────────────────────────────────────────
-function EncuestaPage({ token, onComplete }) {
-  const [preguntas, setPreguntas] = useState([]);
-  const [respuestas, setRespuestas] = useState({});
+// ── PERFIL ASIGNADO POR DOCENTE ────────────────────────────────────────────
+function PerfilAsignadoPage({ token, onReady }) {
+  const [perfil, setPerfil] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [enviando, setEnviando] = useState(false);
-  const [resultado, setResultado] = useState(null);
+  const [polling, setPolling] = useState(false);
 
-  useEffect(() => {
-    api("GET", "/api/grupos/encuesta/preguntas", null, token)
-      .then(setPreguntas)
-      .finally(() => setLoading(false));
+  const cargar = useCallback(async () => {
+    try {
+      const p = await api("GET", "/api/grupos/perfil", null, token);
+      if (p.asignado) {
+        setPerfil(p);
+        return true;
+      }
+    } catch (e) {}
+    return false;
   }, [token]);
 
-  async function enviar() {
-    if (Object.keys(respuestas).length < preguntas.length) {
-      alert("Respondé todas las preguntas antes de continuar.");
-      return;
-    }
-    setEnviando(true);
-    try {
-      const data = await api("POST", "/api/grupos/encuesta", { respuestas }, token);
-      setResultado(data);
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      setEnviando(false);
-    }
-  }
+  useEffect(() => {
+    cargar().then(asignado => {
+      setLoading(false);
+      if (!asignado) {
+        // Polling cada 15s esperando que el docente asigne
+        setPolling(true);
+        const id = setInterval(async () => {
+          const ok = await cargar();
+          if (ok) { clearInterval(id); setPolling(false); }
+        }, 15000);
+        return () => clearInterval(id);
+      }
+    });
+  }, [cargar]);
 
-  const LABELS = { conservador: "Conservador", moderado: "Moderado", agresivo: "Agresivo" };
+  if (loading) return <div className="page"><div className="card">Verificando perfil...</div></div>;
+
+  const ICONS = { conservador: "🛡️", moderado: "⚖️", agresivo: "🚀", libre: "🕊️" };
   const DESCRIP = {
-    conservador: "Priorizás preservar el capital. Se recomienda operar activos de baja volatilidad y mantener una exposición concentrada moderada.",
-    moderado: "Buscás un equilibrio entre rendimiento y riesgo. Podés operar la mayoría de los activos disponibles.",
-    agresivo: "Aceptás alta volatilidad en busca de mayores retornos. No tenés restricciones de operación.",
+    conservador: "Perfil conservador. El docente ha configurado restricciones para priorizar la preservación del capital.",
+    moderado: "Perfil moderado. Equilibrio entre rendimiento y riesgo.",
+    agresivo: "Perfil agresivo. Mayor tolerancia al riesgo en busca de retornos más altos.",
+    libre: "Sin restricciones adicionales. El docente ha habilitado libertad total de operación.",
   };
 
-  if (loading) return <div className="page"><div className="card">Cargando encuesta...</div></div>;
-
-  const ICONS = { conservador: "🛡️", moderado: "⚖️", agresivo: "🚀" };
-  if (resultado) {
+  if (!perfil || !perfil.asignado) {
     return (
-      <div className="page">
-        <div className="card" style={{ textAlign: "center", padding: "48px 32px" }}>
-          <div style={{ fontSize: 52, marginBottom: 12 }}>{ICONS[resultado.perfil]}</div>
-          <p style={{ fontSize: 12, fontWeight: 700, color: "var(--gris)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tu perfil inversor</p>
-          <div style={{ marginBottom: 16 }}>
-            <span className={`badge badge-${resultado.perfil}`} style={{ fontSize: 16, padding: "6px 20px" }}>
-              {LABELS[resultado.perfil]}
-            </span>
-          </div>
-          <p style={{ color: "var(--gris)", fontSize: 14, lineHeight: 1.6, maxWidth: 380, margin: "0 auto 28px" }}>
-            {DESCRIP[resultado.perfil]}
+      <div className="encuesta-bloqueada">
+        <div className="encuesta-bloqueada-card">
+          <div className="encuesta-bloqueada-icon" style={{ fontSize: 42, marginBottom: 12 }}>⏳</div>
+          <div className="encuesta-bloqueada-titulo">Esperando perfil del docente</div>
+          <p className="encuesta-bloqueada-desc">
+            Tu grupo aún no tiene un perfil inversor asignado. El docente lo configurará antes de comenzar la simulación.
           </p>
-          <button className="btn btn-primary" onClick={() => onComplete(resultado.perfil)}>
-            Ir al simulador →
-          </button>
+          {polling && (
+            <p style={{ fontSize: 12, color: "var(--gris)", marginTop: 8 }}>
+              <span className="spinner" style={{ marginRight: 6 }} />Verificando automáticamente...
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
-  const completadas = Object.keys(respuestas).length;
-  const progreso = preguntas.length > 0 ? (completadas / preguntas.length) * 100 : 0;
-
   return (
     <div className="page">
-      <div className="encuesta-header">
-        <h2>Encuesta de perfil de riesgo</h2>
-        <p>Respondé las siguientes preguntas para determinar el perfil inversor de tu grupo.</p>
-        <div className="progreso-barra">
-          <div className="progreso-fill" style={{ width: `${progreso}%` }} />
+      <div className="card" style={{ textAlign: "center", padding: "48px 32px", maxWidth: 480, margin: "0 auto" }}>
+        <div style={{ fontSize: 52, marginBottom: 12 }}>{ICONS[perfil.estilo] || "📋"}</div>
+        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--gris)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+          Perfil inversor asignado por el docente
+        </p>
+        <div style={{ marginBottom: 16 }}>
+          <span className={`badge badge-${perfil.estilo}`} style={{ fontSize: 16, padding: "6px 20px" }}>
+            {perfil.estilo.charAt(0).toUpperCase() + perfil.estilo.slice(1)}
+          </span>
         </div>
-        <p className="progreso-label">{completadas} de {preguntas.length} respondidas</p>
-      </div>
+        <p style={{ color: "var(--gris)", fontSize: 14, lineHeight: 1.6, maxWidth: 380, margin: "0 auto 20px" }}>
+          {DESCRIP[perfil.estilo] || "Perfil configurado por el docente."}
+        </p>
 
-      {preguntas.map(p => (
-        <div key={p.num} className="pregunta-card">
-          <div className="pregunta-num">Pregunta {p.num}</div>
-          <div className="pregunta-texto">{p.texto}</div>
-          {Object.entries(p.opciones).map(([letra, op]) => (
-            <label key={letra} className={`opcion ${respuestas[p.num] === letra ? "selected" : ""}`}>
-              <input
-                type="radio"
-                name={`q${p.num}`}
-                value={letra}
-                checked={respuestas[p.num] === letra}
-                onChange={() => setRespuestas(r => ({ ...r, [p.num]: letra }))}
-              />
-              <span className="opcion-radio">
-                <span className="opcion-radio-dot" />
-              </span>
-              <span className="opcion-texto">{op.texto}</span>
-            </label>
+        {/* Restricciones del perfil */}
+        <div style={{ textAlign: "left", background: "var(--fondo, #f9fafb)", borderRadius: 10, padding: "16px 20px", marginBottom: 24 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gris)", textTransform: "uppercase", marginBottom: 10 }}>Restricciones configuradas</div>
+          {[
+            perfil.max_pct_por_activo && `Máx. ${(perfil.max_pct_por_activo * 100).toFixed(0)}% por activo`,
+            perfil.max_pct_por_sector && `Máx. ${(perfil.max_pct_por_sector * 100).toFixed(0)}% por sector`,
+            perfil.min_activos && `Mín. ${perfil.min_activos} activos distintos`,
+            perfil.min_sectores && `Mín. ${perfil.min_sectores} sectores`,
+            (perfil.min_pct_renta_fija || perfil.max_pct_renta_fija) && `Renta fija: ${perfil.min_pct_renta_fija ? (perfil.min_pct_renta_fija * 100).toFixed(0) + "%" : "0%"} – ${perfil.max_pct_renta_fija ? (perfil.max_pct_renta_fija * 100).toFixed(0) + "%" : "100%"}`,
+            (perfil.min_pct_renta_variable || perfil.max_pct_renta_variable) && `Renta variable: ${perfil.min_pct_renta_variable ? (perfil.min_pct_renta_variable * 100).toFixed(0) + "%" : "0%"} – ${perfil.max_pct_renta_variable ? (perfil.max_pct_renta_variable * 100).toFixed(0) + "%" : "100%"}`,
+            (perfil.min_pct_liquidez || perfil.max_pct_liquidez) && `Liquidez: ${perfil.min_pct_liquidez ? (perfil.min_pct_liquidez * 100).toFixed(0) + "%" : "0%"} – ${perfil.max_pct_liquidez ? (perfil.max_pct_liquidez * 100).toFixed(0) + "%" : "100%"}`,
+            perfil.respetar_tendencia && `Respetar tendencia esperada de cada instrumento`,
+          ].filter(Boolean).map((r, i) => (
+            <div key={i} style={{ fontSize: 13, paddingBottom: 5, display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ color: "var(--azul)", fontSize: 10 }}>●</span> {r}
+            </div>
           ))}
+          {[
+            perfil.max_pct_por_activo, perfil.max_pct_por_sector, perfil.min_activos, perfil.min_sectores,
+            perfil.min_pct_renta_fija, perfil.max_pct_renta_fija, perfil.min_pct_renta_variable, perfil.max_pct_renta_variable,
+            perfil.min_pct_liquidez, perfil.max_pct_liquidez, perfil.respetar_tendencia,
+          ].every(v => !v) && (
+            <p style={{ color: "var(--gris)", fontSize: 13, margin: 0 }}>Sin restricciones específicas (perfil libre).</p>
+          )}
+          {perfil.notas && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "var(--texto)", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "8px 12px" }}>
+              📝 {perfil.notas}
+            </div>
+          )}
         </div>
-      ))}
 
-      <button className="btn btn-primary" style={{ width: "100%", marginTop: 4 }} onClick={enviar} disabled={enviando}>
-        {enviando && <span className="spinner" />}
-        {enviando ? "Calculando perfil..." : "Completar encuesta"}
-      </button>
+        <button className="btn btn-primary" onClick={() => onReady(perfil.estilo)}>
+          Ir al simulador →
+        </button>
+      </div>
     </div>
   );
 }
@@ -623,6 +633,9 @@ function EncuestaPage({ token, onComplete }) {
 function MiCartera({ token, perfil }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [subTab, setSubTab] = useState("posiciones");
+  const [movimientos, setMovimientos] = useState([]);
+  const [loadingMov, setLoadingMov] = useState(false);
 
   const cargar = useCallback(async () => {
     try {
@@ -634,10 +647,22 @@ function MiCartera({ token, perfil }) {
 
   useEffect(() => { cargar(); const id = setInterval(cargar, 15000); return () => clearInterval(id); }, [cargar]);
 
+  useEffect(() => {
+    if (subTab !== "movimientos") return;
+    setLoadingMov(true);
+    api("GET", "/api/grupos/movimientos", null, token)
+      .then(setMovimientos)
+      .catch(() => {})
+      .finally(() => setLoadingMov(false));
+  }, [subTab, token]);
+
   if (loading) return <div className="page"><div className="card">Cargando cartera...</div></div>;
   if (!data) return <div className="page"><div className="alert alert-error">Error al cargar cartera.</div></div>;
 
   const rend = data.rendimiento_pct;
+
+  const TIPO_COLOR = { compra: "var(--verde)", venta: "var(--rojo)", caucion_c: "#6366f1", caucion_t: "#6366f1", suscripcion: "#0ea5e9", rescate: "#f59e0b" };
+  const TIPO_LABEL = { compra: "Compra", venta: "Venta", caucion_c: "Caución (C)", caucion_t: "Caución (T)", suscripcion: "Suscripción", rescate: "Rescate" };
 
   return (
     <div className="page">
@@ -645,6 +670,9 @@ function MiCartera({ token, perfil }) {
         <div className="kpi">
           <div className="kpi-label">Efectivo disponible</div>
           <div className="kpi-value">{fmt(data.capital_disponible)}</div>
+          {data.pct_disponible !== undefined && (
+            <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>{data.pct_disponible.toFixed(1)}% del capital</div>
+          )}
         </div>
         <div className="kpi">
           <div className="kpi-label">Valor de cartera</div>
@@ -666,41 +694,112 @@ function MiCartera({ token, perfil }) {
         </div>
       )}
 
-      <div className="card">
-        <div className="card-title">Posiciones abiertas</div>
-        {data.posiciones.length === 0 ? (
-          <p style={{ color: "var(--gris)", fontSize: 13 }}>Todavía no tenés posiciones. Ingresá a la pantalla <b>Operar</b> para comprar activos.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th>Nombre</th>
-                <th style={{ textAlign: "right" }}>Cantidad</th>
-                <th style={{ textAlign: "right" }}>P° prom.</th>
-                <th style={{ textAlign: "right" }}>P° actual</th>
-                <th style={{ textAlign: "right" }}>Valor</th>
-                <th style={{ textAlign: "right" }}>Resultado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.posiciones.map(p => (
-                <tr key={p.ticker}>
-                  <td><b>{p.ticker}</b></td>
-                  <td style={{ color: "var(--gris)" }}>{p.nombre}</td>
-                  <td style={{ textAlign: "right" }}>{p.cantidad}</td>
-                  <td style={{ textAlign: "right" }}>{fmt(p.precio_promedio)}</td>
-                  <td style={{ textAlign: "right" }}>{fmt(p.precio_actual)}</td>
-                  <td style={{ textAlign: "right" }}>{fmt(p.valor_mercado)}</td>
-                  <td style={{ textAlign: "right" }} className={p.resultado >= 0 ? "pos" : "neg"}>
-                    {fmt(p.resultado)} ({fmtPct(p.resultado_pct)})
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {[{ id: "posiciones", label: "Posiciones abiertas" }, { id: "movimientos", label: "Movimientos" }].map(t => (
+          <button key={t.id} className={`btn btn-sm ${subTab === t.id ? "btn-primary" : "btn-outline"}`}
+            onClick={() => setSubTab(t.id)}>{t.label}</button>
+        ))}
       </div>
+
+      {subTab === "posiciones" && (
+        <div className="card">
+          <div className="card-title">Posiciones abiertas</div>
+          {data.posiciones.length === 0 ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Todavía no tenés posiciones. Ingresá a la pantalla <b>Operar</b> para comprar activos.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Nombre</th>
+                  <th style={{ textAlign: "right" }}>Cantidad</th>
+                  <th style={{ textAlign: "right" }}>P° prom.</th>
+                  <th style={{ textAlign: "right" }}>P° actual</th>
+                  <th style={{ textAlign: "right" }}>Valor</th>
+                  <th style={{ textAlign: "right" }}>% Cartera</th>
+                  <th style={{ textAlign: "right" }}>Resultado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.posiciones.map(p => (
+                  <tr key={p.ticker}>
+                    <td><b>{p.ticker}</b></td>
+                    <td style={{ color: "var(--gris)" }}>{p.nombre}</td>
+                    <td style={{ textAlign: "right" }}>{p.cantidad}</td>
+                    <td style={{ textAlign: "right" }}>{fmt(p.precio_promedio)}</td>
+                    <td style={{ textAlign: "right" }}>{fmt(p.precio_actual)}</td>
+                    <td style={{ textAlign: "right" }}>{fmt(p.valor_mercado)}</td>
+                    <td style={{ textAlign: "right" }}>
+                      <span style={{ fontWeight: 600, color: "var(--azul)" }}>
+                        {(p.pct_cartera ?? 0).toFixed(1)}%
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }} className={p.resultado >= 0 ? "pos" : "neg"}>
+                      {fmt(p.resultado)} ({fmtPct(p.resultado_pct)})
+                    </td>
+                  </tr>
+                ))}
+                {/* Fila efectivo */}
+                {data.pct_disponible !== undefined && (
+                  <tr style={{ borderTop: "2px solid var(--borde, #e5e7eb)", opacity: .75 }}>
+                    <td colSpan={5} style={{ color: "var(--gris)", fontSize: 12 }}>Efectivo disponible</td>
+                    <td style={{ textAlign: "right" }}>{fmt(data.capital_disponible)}</td>
+                    <td style={{ textAlign: "right" }}>
+                      <span style={{ fontWeight: 600, color: "var(--gris)" }}>
+                        {data.pct_disponible.toFixed(1)}%
+                      </span>
+                    </td>
+                    <td />
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {subTab === "movimientos" && (
+        <div className="card">
+          <div className="card-title">Movimientos</div>
+          {loadingMov ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Cargando movimientos...</p>
+          ) : movimientos.length === 0 ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Todavía no hay movimientos registrados.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Tipo de operación</th>
+                  <th>Descripción</th>
+                  <th style={{ textAlign: "right" }}>Cantidad</th>
+                  <th style={{ textAlign: "right" }}>Precio</th>
+                  <th style={{ textAlign: "right" }}>Comisión</th>
+                  <th style={{ textAlign: "right" }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {movimientos.map((m, i) => (
+                  <tr key={i}>
+                    <td style={{ fontSize: 12, color: "var(--gris)", whiteSpace: "nowrap" }}>{fmtFecha(m.fecha)}</td>
+                    <td>
+                      <span style={{ fontWeight: 600, color: TIPO_COLOR[m.tipo] || "var(--texto)" }}>
+                        {TIPO_LABEL[m.tipo] || m.tipo}
+                      </span>
+                    </td>
+                    <td><b>{m.descripcion}</b></td>
+                    <td style={{ textAlign: "right" }}>{m.cantidad ?? <span style={{ color: "#d1d5db" }}>—</span>}</td>
+                    <td style={{ textAlign: "right" }}>{m.precio != null ? fmt(m.precio) : <span style={{ color: "#d1d5db" }}>—</span>}</td>
+                    <td style={{ textAlign: "right" }}>{m.comision != null ? fmt(m.comision) : <span style={{ color: "#d1d5db" }}>—</span>}</td>
+                    <td style={{ textAlign: "right", fontWeight: 600 }}>{fmt(m.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1180,6 +1279,29 @@ function PanelDocente({ token }) {
   const [config, setConfig] = useState({ nombre_experiencia: "", capital_inicial: 1000000, comision: 0.006, activo: false });
   const [savingConfig, setSavingConfig] = useState(false);
 
+  // Instrumentos (para tab config)
+  const [instrumentos, setInstrumentos] = useState([]);
+  const [loadingInstr, setLoadingInstr] = useState(false);
+  const [editandoInstr, setEditandoInstr] = useState({}); // id -> {sector, tendencia_esperada}
+  const [savingInstr, setSavingInstr] = useState(null);
+
+  // Perfil de grupo
+  const [perfilGrupoModal, setPerfilGrupoModal] = useState(null); // { grupo_id, nombre }
+  const [perfilForm, setPerfilForm] = useState({
+    estilo: "moderado",
+    max_pct_por_activo: "", max_pct_por_sector: "",
+    min_activos: "", min_sectores: "",
+    min_pct_renta_fija: "", max_pct_renta_fija: "",
+    min_pct_renta_variable: "", max_pct_renta_variable: "",
+    min_pct_liquidez: "", max_pct_liquidez: "",
+    respetar_tendencia: false, notas: "",
+  });
+  const [savingPerfil, setSavingPerfil] = useState(false);
+
+  const cargarGrupos  = useCallback(() => api("GET", "/api/docente/grupos",  null, token).then(setGrupos),   [token]);
+  const cargarAlumnos = useCallback(() => api("GET", "/api/docente/alumnos", null, token).then(setAlumnos),  [token]);
+  const cargarNoticias = useCallback(() => api("GET", "/api/docente/noticias", null, token).then(setNoticias), [token]);
+
   useEffect(() => {
     Promise.all([
       api("GET", "/api/docente/grupos", null, token),
@@ -1189,6 +1311,98 @@ function PanelDocente({ token }) {
       api("GET", "/api/docente/configuracion", null, token),
     ]).then(([g, a, n, r, cfg]) => { setGrupos(g); setAlumnos(a); setNoticias(n); setRanking(r); setConfig(cfg); });
   }, [token]);
+
+  // Cargar instrumentos solo al entrar a la tab config
+  useEffect(() => {
+    if (tab !== "config") return;
+    if (instrumentos.length > 0) return; // ya cargados
+    setLoadingInstr(true);
+    api("GET", "/api/docente/instrumentos", null, token)
+      .then(data => { setInstrumentos(data); })
+      .catch(() => {})
+      .finally(() => setLoadingInstr(false));
+  }, [tab, token]);
+
+  async function abrirPerfilModal(grupo) {
+    setPerfilGrupoModal({ grupo_id: grupo.id, nombre: grupo.nombre });
+    // Cargar perfil existente si lo hay
+    try {
+      const p = await api("GET", `/api/docente/grupos/${grupo.id}/perfil`, null, token);
+      if (p.asignado) {
+        setPerfilForm({
+          estilo: p.estilo || "moderado",
+          max_pct_por_activo: p.max_pct_por_activo != null ? (p.max_pct_por_activo * 100).toFixed(0) : "",
+          max_pct_por_sector: p.max_pct_por_sector != null ? (p.max_pct_por_sector * 100).toFixed(0) : "",
+          min_activos: p.min_activos ?? "",
+          min_sectores: p.min_sectores ?? "",
+          min_pct_renta_fija: p.min_pct_renta_fija != null ? (p.min_pct_renta_fija * 100).toFixed(0) : "",
+          max_pct_renta_fija: p.max_pct_renta_fija != null ? (p.max_pct_renta_fija * 100).toFixed(0) : "",
+          min_pct_renta_variable: p.min_pct_renta_variable != null ? (p.min_pct_renta_variable * 100).toFixed(0) : "",
+          max_pct_renta_variable: p.max_pct_renta_variable != null ? (p.max_pct_renta_variable * 100).toFixed(0) : "",
+          min_pct_liquidez: p.min_pct_liquidez != null ? (p.min_pct_liquidez * 100).toFixed(0) : "",
+          max_pct_liquidez: p.max_pct_liquidez != null ? (p.max_pct_liquidez * 100).toFixed(0) : "",
+          respetar_tendencia: p.respetar_tendencia || false,
+          notas: p.notas || "",
+        });
+      } else {
+        setPerfilForm({ estilo: "moderado", max_pct_por_activo: "", max_pct_por_sector: "", min_activos: "", min_sectores: "", min_pct_renta_fija: "", max_pct_renta_fija: "", min_pct_renta_variable: "", max_pct_renta_variable: "", min_pct_liquidez: "", max_pct_liquidez: "", respetar_tendencia: false, notas: "" });
+      }
+    } catch (e) {
+      setPerfilForm({ estilo: "moderado", max_pct_por_activo: "", max_pct_por_sector: "", min_activos: "", min_sectores: "", min_pct_renta_fija: "", max_pct_renta_fija: "", min_pct_renta_variable: "", max_pct_renta_variable: "", min_pct_liquidez: "", max_pct_liquidez: "", respetar_tendencia: false, notas: "" });
+    }
+  }
+
+  function pctToDecimal(val) {
+    const n = parseFloat(val);
+    return isNaN(n) ? null : n / 100;
+  }
+
+  async function guardarPerfil() {
+    if (!perfilGrupoModal) return;
+    setSavingPerfil(true);
+    try {
+      await api("PUT", `/api/docente/grupos/${perfilGrupoModal.grupo_id}/perfil`, {
+        estilo: perfilForm.estilo,
+        max_pct_por_activo: pctToDecimal(perfilForm.max_pct_por_activo),
+        max_pct_por_sector: pctToDecimal(perfilForm.max_pct_por_sector),
+        min_activos: perfilForm.min_activos !== "" ? parseInt(perfilForm.min_activos) : null,
+        min_sectores: perfilForm.min_sectores !== "" ? parseInt(perfilForm.min_sectores) : null,
+        min_pct_renta_fija: pctToDecimal(perfilForm.min_pct_renta_fija),
+        max_pct_renta_fija: pctToDecimal(perfilForm.max_pct_renta_fija),
+        min_pct_renta_variable: pctToDecimal(perfilForm.min_pct_renta_variable),
+        max_pct_renta_variable: pctToDecimal(perfilForm.max_pct_renta_variable),
+        min_pct_liquidez: pctToDecimal(perfilForm.min_pct_liquidez),
+        max_pct_liquidez: pctToDecimal(perfilForm.max_pct_liquidez),
+        respetar_tendencia: perfilForm.respetar_tendencia,
+        notas: perfilForm.notas || null,
+      }, token);
+      flash("success", `Perfil asignado a ${perfilGrupoModal.nombre}`);
+      // Recargar grupos para reflejar el perfil
+      const g = await api("GET", "/api/docente/grupos", null, token);
+      setGrupos(g);
+      setPerfilGrupoModal(null);
+    } catch (e) {
+      flash("error", e.message);
+    } finally {
+      setSavingPerfil(false);
+    }
+  }
+
+  async function guardarTendenciaInstr(id) {
+    const cambios = editandoInstr[id];
+    if (!cambios) return;
+    setSavingInstr(id);
+    try {
+      const updated = await api("PUT", `/api/docente/instrumentos/${id}`, cambios, token);
+      setInstrumentos(prev => prev.map(i => i.id === id ? { ...i, ...updated } : i));
+      setEditandoInstr(prev => { const n = { ...prev }; delete n[id]; return n; });
+      flash("success", "Instrumento actualizado.");
+    } catch (e) {
+      flash("error", e.message);
+    } finally {
+      setSavingInstr(null);
+    }
+  }
 
   function flash(type, text) { setMsg({ type, text }); setTimeout(() => setMsg({ type: "", text: "" }), 4000); }
 
@@ -1303,6 +1517,133 @@ function PanelDocente({ token }) {
             {t.label}
           </button>
         ))}
+        {/* Modal asignación perfil de grupo */}
+        {perfilGrupoModal && (
+          <div className="modal-overlay" onClick={() => setPerfilGrupoModal(null)}>
+            <div className="modal" style={{ maxWidth: 620, maxHeight: "90vh", overflow: "auto" }} onClick={e => e.stopPropagation()}>
+              <div className="modal-title">🎯 Perfil inversor — {perfilGrupoModal.nombre}</div>
+              <p style={{ fontSize: 12, color: "var(--gris)", marginBottom: 16 }}>
+                Configurá las restricciones de cartera para este grupo. Los campos vacíos = sin restricción.
+              </p>
+
+              {/* Estilo general */}
+              <div className="form-group">
+                <label className="form-label">Estilo general</label>
+                <select value={perfilForm.estilo} onChange={e => setPerfilForm(p => ({ ...p, estilo: e.target.value }))}>
+                  <option value="conservador">Conservador</option>
+                  <option value="moderado">Moderado</option>
+                  <option value="agresivo">Agresivo</option>
+                  <option value="libre">Libre (sin restricciones)</option>
+                </select>
+              </div>
+
+              {/* Concentración */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Máx. % por activo</label>
+                  <input type="number" min={1} max={100} placeholder="Ej: 20"
+                    value={perfilForm.max_pct_por_activo}
+                    onChange={e => setPerfilForm(p => ({ ...p, max_pct_por_activo: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Máx. % por sector</label>
+                  <input type="number" min={1} max={100} placeholder="Ej: 30"
+                    value={perfilForm.max_pct_por_sector}
+                    onChange={e => setPerfilForm(p => ({ ...p, max_pct_por_sector: e.target.value }))} />
+                </div>
+              </div>
+
+              {/* Diversificación */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Mín. activos distintos</label>
+                  <input type="number" min={1} placeholder="Ej: 3"
+                    value={perfilForm.min_activos}
+                    onChange={e => setPerfilForm(p => ({ ...p, min_activos: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Mín. sectores</label>
+                  <input type="number" min={1} placeholder="Ej: 2"
+                    value={perfilForm.min_sectores}
+                    onChange={e => setPerfilForm(p => ({ ...p, min_sectores: e.target.value }))} />
+                </div>
+              </div>
+
+              {/* Renta fija */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gris)", textTransform: "uppercase", marginBottom: 6 }}>Renta fija (% del capital total)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Mínimo %</label>
+                  <input type="number" min={0} max={100} placeholder="Ej: 10"
+                    value={perfilForm.min_pct_renta_fija}
+                    onChange={e => setPerfilForm(p => ({ ...p, min_pct_renta_fija: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Máximo %</label>
+                  <input type="number" min={0} max={100} placeholder="Ej: 60"
+                    value={perfilForm.max_pct_renta_fija}
+                    onChange={e => setPerfilForm(p => ({ ...p, max_pct_renta_fija: e.target.value }))} />
+                </div>
+              </div>
+
+              {/* Renta variable */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gris)", textTransform: "uppercase", marginBottom: 6 }}>Renta variable (% del capital total)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Mínimo %</label>
+                  <input type="number" min={0} max={100} placeholder="Ej: 20"
+                    value={perfilForm.min_pct_renta_variable}
+                    onChange={e => setPerfilForm(p => ({ ...p, min_pct_renta_variable: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Máximo %</label>
+                  <input type="number" min={0} max={100} placeholder="Ej: 80"
+                    value={perfilForm.max_pct_renta_variable}
+                    onChange={e => setPerfilForm(p => ({ ...p, max_pct_renta_variable: e.target.value }))} />
+                </div>
+              </div>
+
+              {/* Liquidez */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gris)", textTransform: "uppercase", marginBottom: 6 }}>Liquidez / efectivo (% del capital total)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Mínimo %</label>
+                  <input type="number" min={0} max={100} placeholder="Ej: 5"
+                    value={perfilForm.min_pct_liquidez}
+                    onChange={e => setPerfilForm(p => ({ ...p, min_pct_liquidez: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Máximo %</label>
+                  <input type="number" min={0} max={100} placeholder="Ej: 30"
+                    value={perfilForm.max_pct_liquidez}
+                    onChange={e => setPerfilForm(p => ({ ...p, max_pct_liquidez: e.target.value }))} />
+                </div>
+              </div>
+
+              {/* Tendencia */}
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13, cursor: "pointer" }}>
+                <input type="checkbox" checked={perfilForm.respetar_tendencia}
+                  onChange={e => setPerfilForm(p => ({ ...p, respetar_tendencia: e.target.checked }))} />
+                <span>El grupo debe respetar la tendencia esperada configurada en cada instrumento</span>
+              </label>
+
+              {/* Notas */}
+              <div className="form-group">
+                <label className="form-label">Notas para el grupo (opcional)</label>
+                <textarea rows={3} placeholder="Instrucciones adicionales o criterios pedagógicos..."
+                  value={perfilForm.notas}
+                  onChange={e => setPerfilForm(p => ({ ...p, notas: e.target.value }))} />
+              </div>
+
+              <div className="modal-actions">
+                <button className="btn btn-outline" onClick={() => setPerfilGrupoModal(null)}>Cancelar</button>
+                <button className="btn btn-primary" onClick={guardarPerfil} disabled={savingPerfil}>
+                  {savingPerfil ? "Guardando..." : "💾 Guardar perfil"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* indicador estado simulador */}
         <span style={{
           marginLeft: "auto", fontSize: 12, fontWeight: 600,
@@ -1333,7 +1674,15 @@ function PanelDocente({ token }) {
           </div>
 
           <div className="panel-section">
-            <div className="panel-section-title">Grupos existentes</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div className="panel-section-title" style={{ marginBottom: 0 }}>Grupos existentes ({grupos.length})</div>
+              <button className="btn btn-outline btn-sm" style={{ color: "var(--rojo)", borderColor: "var(--rojo)", fontSize: 11 }}
+                onClick={async () => {
+                  if (!confirm(`¿Eliminar TODOS los grupos? Esto borrará operaciones, posiciones y perfiles. Los alumnos quedarán desvinculados.`)) return;
+                  await api("POST", "/api/docente/grupos/reset", null, token);
+                  cargarGrupos();
+                }}>🗑 Resetear grupos</button>
+            </div>
             {grupos.map(g => (
               <div key={g.id} className="card" style={{ padding: "14px 18px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -1341,8 +1690,21 @@ function PanelDocente({ token }) {
                     <b>{g.nombre}</b>
                     <span style={{ marginLeft: 10, fontFamily: "monospace", background: "#f3f4f6", padding: "2px 8px", borderRadius: 6, fontSize: 13, fontWeight: 700 }}>{g.codigo_acceso}</span>
                     {g.perfil_riesgo && <span className={`badge badge-${g.perfil_riesgo}`} style={{ marginLeft: 8 }}>{g.perfil_riesgo}</span>}
+                    {g.encuesta_completada && (
+                      <span style={{ marginLeft: 6, fontSize: 11, color: "var(--verde)", fontWeight: 600 }}>✓ perfil asignado</span>
+                    )}
                   </div>
-                  <button className="btn btn-outline btn-sm" onClick={() => verReporteGrupo(g.id)}>Ver reporte</button>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button className="btn btn-outline btn-sm" style={{ color: "#6366f1", borderColor: "#6366f1" }} onClick={() => abrirPerfilModal(g)}>🎯 Perfil</button>
+                    <button className="btn btn-outline btn-sm" onClick={() => verReporteGrupo(g.id)}>Ver reporte</button>
+                    <button className="btn btn-outline btn-sm" style={{ color: "var(--rojo)", borderColor: "var(--rojo)" }}
+                      title="Eliminar grupo"
+                      onClick={async () => {
+                        if (!confirm(`¿Eliminar "${g.nombre}"? Se borrarán sus operaciones, posiciones y perfil.`)) return;
+                        await api("DELETE", `/api/docente/grupos/${g.id}`, null, token);
+                        cargarGrupos();
+                      }}>🗑</button>
+                  </div>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--gris)", marginTop: 6 }}>
                   Capital: {fmt(g.capital_total ?? 0)} · {g.num_operaciones} operaciones · {(g.alumnos || []).length} alumnos
@@ -1411,9 +1773,17 @@ function PanelDocente({ token }) {
             </div>
           </div>
           <div className="panel-section">
-            <div className="panel-section-title">Alumnos ({alumnos.length})</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div className="panel-section-title" style={{ marginBottom: 0 }}>Alumnos ({alumnos.length})</div>
+              <button className="btn btn-outline btn-sm" style={{ color: "var(--rojo)", borderColor: "var(--rojo)", fontSize: 11 }}
+                onClick={async () => {
+                  if (!confirm("¿Eliminar TODOS los alumnos?")) return;
+                  await api("POST", "/api/docente/alumnos/reset", null, token);
+                  cargarAlumnos();
+                }}>🗑 Resetear alumnos</button>
+            </div>
             <table>
-              <thead><tr><th>Apellido</th><th>Nombre</th><th>Legajo</th><th>Grupo</th></tr></thead>
+              <thead><tr><th>Apellido</th><th>Nombre</th><th>Legajo</th><th>Grupo</th><th></th></tr></thead>
               <tbody>
                 {alumnos.map(a => (
                   <tr key={a.id}>
@@ -1429,6 +1799,15 @@ function PanelDocente({ token }) {
                         <option value="">Sin grupo</option>
                         {grupos.map(g => <option key={g.id} value={g.id}>{g.nombre}</option>)}
                       </select>
+                    </td>
+                    <td>
+                      <button className="btn btn-outline btn-sm" style={{ color: "var(--rojo)", borderColor: "var(--rojo)", padding: "2px 8px" }}
+                        title="Eliminar alumno"
+                        onClick={async () => {
+                          if (!confirm(`¿Eliminar a ${a.nombre} ${a.apellido}?`)) return;
+                          await api("DELETE", `/api/docente/alumnos/${a.id}`, null, token);
+                          cargarAlumnos();
+                        }}>🗑</button>
                     </td>
                   </tr>
                 ))}
@@ -1478,11 +1857,19 @@ function PanelDocente({ token }) {
           </div>
 
           <div className="panel-section">
-            <div className="panel-section-title">Noticias publicadas</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div className="panel-section-title" style={{ marginBottom: 0 }}>Noticias publicadas ({noticias.length})</div>
+              <button className="btn btn-outline btn-sm" style={{ color: "var(--rojo)", borderColor: "var(--rojo)", fontSize: 11 }}
+                onClick={async () => {
+                  if (!confirm("¿Eliminar TODAS las noticias?")) return;
+                  await api("POST", "/api/docente/noticias/reset", null, token);
+                  cargarNoticias();
+                }}>🗑 Resetear noticias</button>
+            </div>
             {noticias.map(n => (
               <div key={n.id} className="card" style={{ padding: "12px 16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: n.tipo === "fundamental" ? "var(--azul)" : "var(--naranja)", textTransform: "uppercase" }}>
                       {n.tipo === "fundamental" ? "📰 Fundamental" : "📈 Técnico"}
                     </span>
@@ -1490,7 +1877,16 @@ function PanelDocente({ token }) {
                     <div style={{ fontWeight: 600, marginTop: 4 }}>{n.titulo}</div>
                     <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>{fmtFecha(n.publicado_en)} · {n.lecturas} lecturas</div>
                   </div>
-                  <button className="btn btn-outline btn-sm" onClick={() => verReporteNoticia(n.id)}>Ver reporte</button>
+                  <div style={{ display: "flex", gap: 6, marginLeft: 12 }}>
+                    <button className="btn btn-outline btn-sm" onClick={() => verReporteNoticia(n.id)}>Ver reporte</button>
+                    <button className="btn btn-outline btn-sm" style={{ color: "var(--rojo)", borderColor: "var(--rojo)" }}
+                      title="Eliminar noticia"
+                      onClick={async () => {
+                        if (!confirm(`¿Eliminar "${n.titulo}"?`)) return;
+                        await api("DELETE", `/api/docente/noticias/${n.id}`, null, token);
+                        cargarNoticias();
+                      }}>🗑</button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1648,13 +2044,96 @@ function PanelDocente({ token }) {
               </button>
             </div>
           </div>
+
+          {/* Instrumentos */}
+          <div className="panel-section" style={{ maxWidth: "100%" }}>
+            <div className="panel-section-title">Instrumentos disponibles</div>
+            <p style={{ fontSize: 12, color: "var(--gris)", marginBottom: 12 }}>
+              Configurá el sector y la tendencia esperada de cada instrumento para la duración de la simulación.
+            </p>
+            {loadingInstr ? (
+              <p style={{ fontSize: 13, color: "var(--gris)" }}>Cargando instrumentos...</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Ticker</th>
+                    <th>Nombre</th>
+                    <th>Tipo</th>
+                    <th>Sector</th>
+                    <th>Tendencia esperada</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {instrumentos.map(instr => {
+                    const editing = editandoInstr[instr.id] !== undefined;
+                    const vals = editing ? editandoInstr[instr.id] : { sector: instr.sector || "", tendencia_esperada: instr.tendencia_esperada || "neutro" };
+                    const TEND_COLOR = { alcista: "var(--verde)", bajista: "var(--rojo)", neutro: "var(--gris)" };
+                    return (
+                      <tr key={instr.id}>
+                        <td><b>{instr.ticker}</b></td>
+                        <td style={{ fontSize: 12, color: "var(--gris)" }}>{instr.nombre}</td>
+                        <td><span className="badge" style={{ background: "#f3f4f6", color: "#374151" }}>{instr.tipo}</span></td>
+                        <td>
+                          {editing ? (
+                            <input
+                              value={vals.sector}
+                              onChange={e => setEditandoInstr(prev => ({ ...prev, [instr.id]: { ...prev[instr.id], sector: e.target.value } }))}
+                              style={{ width: 140, fontSize: 13, padding: "3px 8px" }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: 13 }}>{instr.sector || <span style={{ color: "#d1d5db" }}>—</span>}</span>
+                          )}
+                        </td>
+                        <td>
+                          {editing ? (
+                            <select
+                              value={vals.tendencia_esperada}
+                              onChange={e => setEditandoInstr(prev => ({ ...prev, [instr.id]: { ...prev[instr.id], tendencia_esperada: e.target.value } }))}
+                              style={{ fontSize: 13, padding: "3px 8px", borderRadius: 6, border: "1px solid var(--borde)", background: "var(--fondo)", color: "var(--texto)" }}
+                            >
+                              <option value="alcista">📈 Alcista</option>
+                              <option value="bajista">📉 Bajista</option>
+                              <option value="neutro">➡️ Neutro</option>
+                            </select>
+                          ) : (
+                            <span style={{ fontWeight: 600, fontSize: 13, color: TEND_COLOR[instr.tendencia_esperada] || "var(--gris)" }}>
+                              {instr.tendencia_esperada === "alcista" ? "📈 Alcista" : instr.tendencia_esperada === "bajista" ? "📉 Bajista" : "➡️ Neutro"}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {editing ? (
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button className="btn btn-sm btn-primary" disabled={savingInstr === instr.id}
+                                onClick={() => guardarTendenciaInstr(instr.id)}>
+                                {savingInstr === instr.id ? "..." : "💾"}
+                              </button>
+                              <button className="btn btn-sm btn-outline"
+                                onClick={() => setEditandoInstr(prev => { const n = { ...prev }; delete n[instr.id]; return n; })}>✕</button>
+                            </div>
+                          ) : (
+                            <button className="btn btn-sm btn-outline"
+                              onClick={() => setEditandoInstr(prev => ({ ...prev, [instr.id]: { sector: instr.sector || "", tendencia_esperada: instr.tendencia_esperada || "neutro" } }))}>
+                              ✏️ Editar
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ── BANNER ENCUESTA PENDIENTE ──────────────────────────────────────────────
+// ── BANNER PERFIL PENDIENTE (legacy — no longer used as main flow) ──────────
 function EncuestaPendiente({ onIrEncuesta }) {
   return (
     <div className="encuesta-bloqueada">
@@ -1683,13 +2162,13 @@ function App() {
   function handleLogin(data) {
     setSession(data);
     if (data.role === "docente") setTab("panel");
-    else if (!data.encuesta_completada) setTab("encuesta");
+    else if (!data.encuesta_completada) setTab("perfil_pendiente");
     else setTab("cartera");
   }
 
   // Cargar conteo de noticias no leídas al iniciar sesión (sólo alumnos)
   useEffect(() => {
-    if (!session || session.role === "docente" || !session.encuesta_completada) return;
+    if (!session || session.role === "docente" || !session.encuesta_completada) return; // encuesta_completada = perfil asignado por docente
     api("GET", "/api/grupos/noticias", null, session.access_token)
       .then(ns => setNoLeidasCount(ns.filter(n => !n.leida).length))
       .catch(() => {});
@@ -1707,15 +2186,15 @@ function App() {
     setNoLeidasCount(0);
   }
 
-  function encuestaCompletada(perfil) {
+  function perfilAsignado(perfil) {
     setSession(s => ({ ...s, perfil_riesgo: perfil, encuesta_completada: true }));
     setTab("cartera");
   }
 
   function cambiarTab(id) {
-    if (!session.encuesta_completada && id !== "encuesta") {
-      setTab(id); // mostramos el banner en esa tab
-      setToast("⚠️ Completá la encuesta de perfil para acceder");
+    if (!session.encuesta_completada && id !== "perfil_pendiente") {
+      setTab(id); // si no hay perfil, igual navegamos — PerfilAsignadoPage se muestra inline
+      setToast("⚠️ El docente aún no asignó un perfil a tu grupo");
       setTimeout(() => setToast(null), 2800);
     } else {
       setTab(id);
@@ -1775,11 +2254,8 @@ function App() {
       {toast && <div className="toast">{toast}</div>}
 
       {esDocente && <PanelDocente token={session.access_token} />}
-      {!esDocente && tab === "encuesta" && !session.encuesta_completada && (
-        <EncuestaPage token={session.access_token} onComplete={encuestaCompletada} />
-      )}
-      {!esDocente && tab !== "encuesta" && !session.encuesta_completada && (
-        <EncuestaPendiente onIrEncuesta={() => setTab("encuesta")} />
+      {!esDocente && !session.encuesta_completada && (
+        <PerfilAsignadoPage token={session.access_token} onReady={perfilAsignado} />
       )}
       {!esDocente && tab === "cartera" && session.encuesta_completada && (
         <MiCartera token={session.access_token} perfil={perfil} />

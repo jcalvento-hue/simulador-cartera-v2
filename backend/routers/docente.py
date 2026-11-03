@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from models import (
     Alumno, Grupo, Noticia, LecturaNoticia, Operacion,
-    Instrumento, Configuracion, get_db, Docente
+    Instrumento, Configuracion, get_db, Docente, PerfilGrupo
 )
 from auth import get_current_docente
 from market import generar_historial_inicial
@@ -224,9 +224,80 @@ def eliminar_noticia(noticia_id: int, db: Session = Depends(get_db), _=Depends(g
     noticia = db.query(Noticia).filter(Noticia.id == noticia_id).first()
     if not noticia:
         raise HTTPException(status_code=404, detail="Noticia no encontrada")
-    noticia.activa = False
+    # Eliminar lecturas asociadas antes de borrar la noticia
+    db.query(LecturaNoticia).filter(LecturaNoticia.noticia_id == noticia_id).delete()
+    db.delete(noticia)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/noticias/reset")
+def reset_noticias(db: Session = Depends(get_db), _=Depends(get_current_docente)):
+    """Elimina TODAS las noticias y sus lecturas."""
+    db.query(LecturaNoticia).delete()
+    db.query(Noticia).delete()
+    db.commit()
+    return {"ok": True, "mensaje": "Todas las noticias eliminadas"}
+
+
+# ── DELETE / RESET grupos y alumnos ──────────────────────────────────────────
+
+from models import Caucion, Posicion, RespuestaEncuesta
+
+@router.delete("/alumnos/{alumno_id}")
+def eliminar_alumno(alumno_id: int, db: Session = Depends(get_db), _=Depends(get_current_docente)):
+    alumno = db.query(Alumno).filter(Alumno.id == alumno_id).first()
+    if not alumno:
+        raise HTTPException(status_code=404, detail="Alumno no encontrado")
+    db.delete(alumno)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/alumnos/reset")
+def reset_alumnos(db: Session = Depends(get_db), _=Depends(get_current_docente)):
+    """Desvincula y elimina TODOS los alumnos."""
+    db.query(Alumno).delete()
+    db.commit()
+    return {"ok": True, "mensaje": "Todos los alumnos eliminados"}
+
+
+@router.delete("/grupos/{grupo_id}")
+def eliminar_grupo(grupo_id: int, db: Session = Depends(get_db), _=Depends(get_current_docente)):
+    """Elimina un grupo y todas sus operaciones, posiciones, cauciones y perfil."""
+    grupo = db.query(Grupo).filter(Grupo.id == grupo_id).first()
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo no encontrado")
+    # Desvincular alumnos
+    db.query(Alumno).filter(Alumno.grupo_id == grupo_id).update({"grupo_id": None})
+    # Eliminar datos asociados
+    db.query(PerfilGrupo).filter(PerfilGrupo.grupo_id == grupo_id).delete()
+    db.query(LecturaNoticia).filter(LecturaNoticia.grupo_id == grupo_id).delete()
+    db.query(Caucion).filter(Caucion.grupo_id == grupo_id).delete()
+    db.query(Posicion).filter(Posicion.grupo_id == grupo_id).delete()
+    db.query(Operacion).filter(Operacion.grupo_id == grupo_id).delete()
+    db.query(RespuestaEncuesta).filter(RespuestaEncuesta.grupo_id == grupo_id).delete()
+    db.delete(grupo)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/grupos/reset")
+def reset_grupos(db: Session = Depends(get_db), _=Depends(get_current_docente)):
+    """Elimina TODOS los grupos, sus operaciones, posiciones, cauciones y perfiles.
+    Los alumnos quedan desvinculados pero no se eliminan."""
+    # Desvincular alumnos
+    db.query(Alumno).update({"grupo_id": None})
+    # Eliminar todo lo relacionado
+    db.query(PerfilGrupo).delete()
+    db.query(LecturaNoticia).delete()
+    db.query(Caucion).delete()
+    db.query(Posicion).delete()
+    db.query(Operacion).delete()
+    db.query(RespuestaEncuesta).delete()
+    db.query(Grupo).delete()
+    db.commit()
+    return {"ok": True, "mensaje": "Todos los grupos eliminados"}
 
 
 # ── Reportes ──────────────────────────────────────────────────────────────────
@@ -393,6 +464,117 @@ def reporte_grupo(
         "operaciones": operaciones,
         "noticias_leidas": noticias_leidas,
     }
+
+
+# ── Instrumentos (sector + tendencia) ────────────────────────────────────────
+
+@router.get("/instrumentos")
+def listar_instrumentos(db: Session = Depends(get_db), _=Depends(get_current_docente)):
+    instrumentos = db.query(Instrumento).filter(Instrumento.activo == True).order_by(Instrumento.tipo, Instrumento.ticker).all()
+    return [
+        {
+            "id": i.id,
+            "ticker": i.ticker,
+            "nombre": i.nombre,
+            "tipo": i.tipo,
+            "sector": i.sector,
+            "tendencia_esperada": i.tendencia_esperada,
+            "precio_actual": i.precio_actual,
+            "volatilidad": i.volatilidad,
+        }
+        for i in instrumentos
+    ]
+
+
+class InstrumentoUpdateIn(BaseModel):
+    sector: Optional[str] = None
+    tendencia_esperada: Optional[str] = None   # alcista / bajista / neutro
+
+
+@router.put("/instrumentos/{instrumento_id}")
+def update_instrumento(
+    instrumento_id: int,
+    body: InstrumentoUpdateIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_docente)
+):
+    inst = db.query(Instrumento).filter(Instrumento.id == instrumento_id).first()
+    if not inst:
+        raise HTTPException(status_code=404, detail="Instrumento no encontrado")
+    if body.sector is not None:
+        inst.sector = body.sector
+    if body.tendencia_esperada is not None:
+        inst.tendencia_esperada = body.tendencia_esperada
+    db.commit()
+    return {"ok": True, "ticker": inst.ticker, "sector": inst.sector, "tendencia_esperada": inst.tendencia_esperada}
+
+
+# ── Perfil de grupo (asignado por docente) ───────────────────────────────────
+
+class PerfilGrupoIn(BaseModel):
+    estilo: Optional[str] = "moderado"           # conservador / moderado / agresivo / libre
+    max_pct_por_activo: Optional[float] = None
+    max_pct_por_sector: Optional[float] = None
+    min_activos: Optional[int] = None
+    min_sectores: Optional[int] = None
+    min_pct_renta_fija: Optional[float] = None
+    max_pct_renta_fija: Optional[float] = None
+    min_pct_renta_variable: Optional[float] = None
+    max_pct_renta_variable: Optional[float] = None
+    min_pct_liquidez: Optional[float] = None
+    max_pct_liquidez: Optional[float] = None
+    respetar_tendencia: Optional[bool] = False
+    notas: Optional[str] = None
+
+
+@router.get("/grupos/{grupo_id}/perfil")
+def get_perfil_grupo(grupo_id: int, db: Session = Depends(get_db), _=Depends(get_current_docente)):
+    p = db.query(PerfilGrupo).filter(PerfilGrupo.grupo_id == grupo_id).first()
+    if not p:
+        return {"asignado": False}
+    return {
+        "asignado": True,
+        "estilo": p.estilo,
+        "max_pct_por_activo": p.max_pct_por_activo,
+        "max_pct_por_sector": p.max_pct_por_sector,
+        "min_activos": p.min_activos,
+        "min_sectores": p.min_sectores,
+        "min_pct_renta_fija": p.min_pct_renta_fija,
+        "max_pct_renta_fija": p.max_pct_renta_fija,
+        "min_pct_renta_variable": p.min_pct_renta_variable,
+        "max_pct_renta_variable": p.max_pct_renta_variable,
+        "min_pct_liquidez": p.min_pct_liquidez,
+        "max_pct_liquidez": p.max_pct_liquidez,
+        "respetar_tendencia": p.respetar_tendencia,
+        "notas": p.notas,
+    }
+
+
+@router.put("/grupos/{grupo_id}/perfil")
+def asignar_perfil_grupo(
+    grupo_id: int,
+    body: PerfilGrupoIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_docente)
+):
+    grupo = db.query(Grupo).filter(Grupo.id == grupo_id).first()
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo no encontrado")
+
+    p = db.query(PerfilGrupo).filter(PerfilGrupo.grupo_id == grupo_id).first()
+    if not p:
+        p = PerfilGrupo(grupo_id=grupo_id)
+        db.add(p)
+
+    for field, val in body.dict().items():
+        setattr(p, field, val)
+
+    # Sincronizar estilo en Grupo.perfil_riesgo para mantener compatibilidad
+    grupo.perfil_riesgo = body.estilo
+    grupo.encuesta_completada = True   # marca como si hubiera completado el perfil
+
+    db.commit()
+    return {"ok": True, "grupo": grupo.nombre, "estilo": p.estilo}
 
 
 @router.post("/configuracion/regenerar-historial")
