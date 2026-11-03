@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from datetime import datetime, timedelta  # noqa: F401
 from models import (
     Grupo, Instrumento, Posicion, Operacion, Noticia,
-    LecturaNoticia, RespuestaEncuesta, Configuracion, Caucion, get_db
+    LecturaNoticia, RespuestaEncuesta, Configuracion, Caucion, PerfilGrupo, get_db
 )
 from auth import get_current_grupo
 from perfil_riesgo import PREGUNTAS, calcular_perfil, validar_coherencia
@@ -105,6 +105,8 @@ def get_mercado(db: Session = Depends(get_db), _=Depends(get_current_grupo)):
             "ticker": i.ticker,
             "nombre": i.nombre,
             "tipo": i.tipo,
+            "sector": i.sector,
+            "tendencia_esperada": i.tendencia_esperada,
             "precio_actual": i.precio_actual,
             "precio_inicial": i.precio_inicial,
             "variacion_pct": var_sesion,           # ahora es var. sesión
@@ -141,11 +143,13 @@ def get_cartera(db: Session = Depends(get_db), grupo: Grupo = Depends(get_curren
     config = db.query(Configuracion).first()
     capital_inicial = config.capital_inicial if config else 1_000_000.0
 
-    posiciones = [
+    posiciones_raw = [
         {
             "instrumento_id": p.instrumento_id,
             "ticker": p.instrumento.ticker,
             "nombre": p.instrumento.nombre,
+            "tipo": p.instrumento.tipo,
+            "sector": p.instrumento.sector,
             "cantidad": p.cantidad,
             "precio_actual": p.instrumento.precio_actual,
             "precio_promedio": p.precio_promedio,
@@ -158,17 +162,43 @@ def get_cartera(db: Session = Depends(get_db), grupo: Grupo = Depends(get_curren
         }
         for p in grupo.posiciones if p.cantidad > 0
     ]
-    valor_cartera = sum(p["valor_mercado"] for p in posiciones)
+    valor_cartera = sum(p["valor_mercado"] for p in posiciones_raw)
     capital_total = grupo.capital_disponible + valor_cartera
+
+    # Calcular % sobre capital total (posiciones + disponible)
+    for p in posiciones_raw:
+        p["pct_cartera"] = round(p["valor_mercado"] / capital_total * 100, 2) if capital_total > 0 else 0.0
+
+    # Perfil asignado por docente
+    perfil_obj = db.query(PerfilGrupo).filter(PerfilGrupo.grupo_id == grupo.id).first()
+    perfil_docente = None
+    if perfil_obj:
+        perfil_docente = {
+            "estilo": perfil_obj.estilo,
+            "max_pct_por_activo": perfil_obj.max_pct_por_activo,
+            "max_pct_por_sector": perfil_obj.max_pct_por_sector,
+            "min_activos": perfil_obj.min_activos,
+            "min_sectores": perfil_obj.min_sectores,
+            "min_pct_renta_fija": perfil_obj.min_pct_renta_fija,
+            "max_pct_renta_fija": perfil_obj.max_pct_renta_fija,
+            "min_pct_renta_variable": perfil_obj.min_pct_renta_variable,
+            "max_pct_renta_variable": perfil_obj.max_pct_renta_variable,
+            "min_pct_liquidez": perfil_obj.min_pct_liquidez,
+            "max_pct_liquidez": perfil_obj.max_pct_liquidez,
+            "respetar_tendencia": perfil_obj.respetar_tendencia,
+            "notas": perfil_obj.notas,
+        }
 
     return {
         "grupo": grupo.nombre,
         "perfil_riesgo": grupo.perfil_riesgo,
+        "perfil_docente": perfil_docente,
         "capital_disponible": round(grupo.capital_disponible, 2),
+        "pct_disponible": round(grupo.capital_disponible / capital_total * 100, 2) if capital_total > 0 else 100.0,
         "valor_cartera": round(valor_cartera, 2),
         "capital_total": round(capital_total, 2),
         "rendimiento_pct": round((capital_total - capital_inicial) / capital_inicial * 100, 2),
-        "posiciones": posiciones,
+        "posiciones": posiciones_raw,
     }
 
 
@@ -353,6 +383,84 @@ def ejecutar_operacion(
         "precio": precio,
         "monto_total": round(monto_total, 2),
         "capital_disponible": round(grupo.capital_disponible, 2),
+    }
+
+
+@router.get("/movimientos")
+def get_movimientos(db: Session = Depends(get_db), grupo: Grupo = Depends(get_current_grupo)):
+    """
+    Historial unificado de movimientos del grupo:
+    compra/venta de instrumentos + cauciones constituidas/cobradas.
+    Ordenado por fecha descendente.
+    """
+    movimientos = []
+
+    # ── Operaciones de compra / venta ─────────────────────────────────────────
+    for o in grupo.operaciones:
+        movimientos.append({
+            "fecha": o.timestamp.isoformat(),
+            "tipo": o.tipo,          # compra / venta
+            "descripcion": o.instrumento.ticker,
+            "nombre": o.instrumento.nombre,
+            "cantidad": o.cantidad,
+            "precio": round(o.precio, 2),
+            "comision": round(o.comision, 2),
+            "total": round(o.monto_total, 2),
+        })
+
+    # ── Cauciones ─────────────────────────────────────────────────────────────
+    cauciones = db.query(Caucion).filter(Caucion.grupo_id == grupo.id).all()
+    for c in cauciones:
+        # Constitución
+        movimientos.append({
+            "fecha": c.constituida_en.isoformat(),
+            "tipo": "Caución (C)",
+            "descripcion": f"Caución {c.plazo_dias}d",
+            "nombre": f"Caución {c.plazo_dias} días — TNA {c.tna*100:.0f}%",
+            "cantidad": 1,
+            "precio": round(c.monto, 2),
+            "comision": 0.0,
+            "total": round(-c.monto, 2),   # salida de capital
+        })
+        # Cobro
+        if c.cobrada:
+            movimientos.append({
+                "fecha": c.vence_en.isoformat(),
+                "tipo": "Caución (T)",
+                "descripcion": f"Caución {c.plazo_dias}d",
+                "nombre": f"Caución vencida — intereses ${c.intereses:,.2f}",
+                "cantidad": 1,
+                "precio": round(c.monto_total, 2),
+                "comision": 0.0,
+                "total": round(c.monto_total, 2),   # ingreso de capital
+            })
+
+    movimientos.sort(key=lambda x: x["fecha"], reverse=True)
+    return movimientos
+
+
+@router.get("/perfil")
+def get_perfil_docente(db: Session = Depends(get_db), grupo: Grupo = Depends(get_current_grupo)):
+    """Retorna el perfil asignado por el docente a este grupo."""
+    p = db.query(PerfilGrupo).filter(PerfilGrupo.grupo_id == grupo.id).first()
+    if not p:
+        return {"asignado": False}
+    return {
+        "asignado": True,
+        "estilo": p.estilo,
+        "max_pct_por_activo": p.max_pct_por_activo,
+        "max_pct_por_sector": p.max_pct_por_sector,
+        "min_activos": p.min_activos,
+        "min_sectores": p.min_sectores,
+        "min_pct_renta_fija": p.min_pct_renta_fija,
+        "max_pct_renta_fija": p.max_pct_renta_fija,
+        "min_pct_renta_variable": p.min_pct_renta_variable,
+        "max_pct_renta_variable": p.max_pct_renta_variable,
+        "min_pct_liquidez": p.min_pct_liquidez,
+        "max_pct_liquidez": p.max_pct_liquidez,
+        "respetar_tendencia": p.respetar_tendencia,
+        "notas": p.notas,
+        "asignado_en": p.asignado_en.isoformat(),
     }
 
 
