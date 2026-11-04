@@ -772,16 +772,6 @@ function MiCartera({ token, perfil }) {
               </div>
               <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>Desv. est. × √252</div>
             </div>
-            <div className="kpi" style={{ flex: 1 }}>
-              <div className="kpi-label" style={{ display: "flex", alignItems: "center" }}>
-                Rendimiento total
-                <Tooltip text="Variación porcentual del capital total (efectivo + cartera) respecto al capital inicial asignado por la cátedra." />
-              </div>
-              <div className={`kpi-value ${metricas.rendimiento_pct >= 0 ? "pos" : "neg"}`} style={{ fontSize: 22 }}>
-                {metricas.rendimiento_pct >= 0 ? "+" : ""}{metricas.rendimiento_pct.toFixed(2)}%
-              </div>
-              <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>{metricas.n_snapshots} operaciones</div>
-            </div>
           </div>
         </div>
       )}
@@ -2135,10 +2125,6 @@ function PanelDocente({ token }) {
                 <tr>
                   <th>Grupo</th>
                   <th style={{ textAlign: "right" }}>
-                    Rendimiento
-                    <Tooltip text="Variación % del capital total respecto al capital inicial." />
-                  </th>
-                  <th style={{ textAlign: "right" }}>
                     Sharpe Ratio
                     <Tooltip text="Retorno por unidad de riesgo. ≥1 excelente, 0.5–1 bueno, <0 el riesgo no fue compensado." />
                   </th>
@@ -2157,9 +2143,6 @@ function PanelDocente({ token }) {
                 {metricasGrupos.map(m => (
                   <tr key={m.grupo}>
                     <td><b>{m.grupo}</b></td>
-                    <td style={{ textAlign: "right" }} className={m.rendimiento_pct != null ? (m.rendimiento_pct >= 0 ? "pos" : "neg") : ""}>
-                      {m.rendimiento_pct != null ? `${m.rendimiento_pct >= 0 ? "+" : ""}${m.rendimiento_pct.toFixed(2)}%` : <span style={{ color: "var(--gris)" }}>—</span>}
-                    </td>
                     <td style={{ textAlign: "right" }}>
                       {m.sharpe != null ? (
                         <span className={m.sharpe >= 1 ? "pos" : m.sharpe < 0 ? "neg" : ""}>
