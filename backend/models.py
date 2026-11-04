@@ -120,6 +120,7 @@ class Operacion(Base):
     monto_total = Column(Float, nullable=False)      # cantidad * precio + comision
     noticia_id = Column(Integer, ForeignKey("noticias.id"), nullable=True)  # noticia vigente al operar
     advertencia_perfil = Column(Boolean, default=False)  # si disparó advertencia
+    justificacion = Column(Text, nullable=True)           # razón de la operación (bitácora)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     grupo = relationship("Grupo", back_populates="operaciones")
@@ -242,6 +243,7 @@ def init_db():
         "ALTER TABLE instrumentos ADD COLUMN tendencia_esperada FLOAT",
         "ALTER TABLE configuracion ADD COLUMN fecha_inicio DATETIME",
         "ALTER TABLE configuracion ADD COLUMN fecha_fin DATETIME",
+        "ALTER TABLE operaciones ADD COLUMN justificacion TEXT",
     ]
     with engine.connect() as conn:
         for sql in migrations:

@@ -209,6 +209,7 @@ class OperacionIn(BaseModel):
     tipo: str            # compra / venta
     cantidad: int
     confirmar_advertencia: bool = False   # el grupo confirmó a pesar de la advertencia
+    justificacion: Optional[str] = None  # razón de la operación (bitácora)
 
 
 @router.post("/operar/preview")
@@ -371,6 +372,7 @@ def ejecutar_operacion(
         monto_total=round(monto_total, 2),
         noticia_id=noticia_vigente.id if noticia_vigente else None,
         advertencia_perfil=advertencia_perfil,
+        justificacion=body.justificacion,
     )
     db.add(op)
     db.commit()
@@ -406,6 +408,7 @@ def get_movimientos(db: Session = Depends(get_db), grupo: Grupo = Depends(get_cu
             "precio": round(o.precio, 2),
             "comision": round(o.comision, 2),
             "total": round(o.monto_total, 2),
+            "justificacion": o.justificacion,
         })
 
     # ── Cauciones ─────────────────────────────────────────────────────────────
@@ -478,6 +481,7 @@ def historial_operaciones(db: Session = Depends(get_db), grupo: Grupo = Depends(
             "monto_total": o.monto_total,
             "advertencia_perfil": o.advertencia_perfil,
             "noticia": o.noticia.titulo if o.noticia else None,
+            "justificacion": o.justificacion,
             "timestamp": o.timestamp.isoformat(),
         }
         for o in ops

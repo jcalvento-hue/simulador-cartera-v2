@@ -325,6 +325,7 @@ def reporte_operaciones(
             "monto_total": o.monto_total,
             "advertencia_perfil": o.advertencia_perfil,
             "noticia": {"id": o.noticia.id, "titulo": o.noticia.titulo} if o.noticia else None,
+            "justificacion": o.justificacion,
             "timestamp": o.timestamp.isoformat(),
         }
         for o in ops
@@ -368,6 +369,34 @@ def reporte_noticia(
         "grupos_que_leyeron": len(grupos_que_leyeron),
         "operaciones_post_noticia": operaciones_post,
     }
+
+
+@router.get("/reportes/bitacoras")
+def reporte_bitacoras(
+    grupo_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_docente)
+):
+    """Bitácora de decisiones: todas las justificaciones de operaciones, ordenadas por grupo y fecha."""
+    q = db.query(Operacion).filter(Operacion.justificacion != None)
+    if grupo_id:
+        q = q.filter(Operacion.grupo_id == grupo_id)
+    ops = q.order_by(Operacion.grupo_id, Operacion.timestamp).all()
+    return [
+        {
+            "id": o.id,
+            "grupo": o.grupo.nombre,
+            "instrumento": o.instrumento.ticker,
+            "tipo": o.tipo,
+            "cantidad": o.cantidad,
+            "precio": o.precio,
+            "monto_total": o.monto_total,
+            "justificacion": o.justificacion,
+            "advertencia_perfil": o.advertencia_perfil,
+            "timestamp": o.timestamp.isoformat(),
+        }
+        for o in ops
+    ]
 
 
 @router.get("/reportes/ranking")
@@ -437,6 +466,7 @@ def reporte_grupo(
             "monto_total": o.monto_total,
             "advertencia_perfil": o.advertencia_perfil,
             "noticia": o.noticia.titulo if o.noticia else None,
+            "justificacion": o.justificacion,
             "timestamp": o.timestamp.isoformat(),
         }
         for o in sorted(grupo.operaciones, key=lambda x: x.timestamp)

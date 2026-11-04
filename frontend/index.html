@@ -777,6 +777,7 @@ function MiCartera({ token, perfil }) {
                   <th style={{ textAlign: "right" }}>Precio</th>
                   <th style={{ textAlign: "right" }}>Comisión</th>
                   <th style={{ textAlign: "right" }}>Total</th>
+                  <th>Justificación</th>
                 </tr>
               </thead>
               <tbody>
@@ -793,6 +794,11 @@ function MiCartera({ token, perfil }) {
                     <td style={{ textAlign: "right" }}>{m.precio != null ? fmt(m.precio) : <span style={{ color: "#d1d5db" }}>—</span>}</td>
                     <td style={{ textAlign: "right" }}>{m.comision != null ? fmt(m.comision) : <span style={{ color: "#d1d5db" }}>—</span>}</td>
                     <td style={{ textAlign: "right", fontWeight: 600 }}>{fmt(m.total)}</td>
+                    <td style={{ maxWidth: 200, fontSize: 12, color: "var(--gris)" }}>
+                      {m.justificacion
+                        ? <span title={m.justificacion} style={{ cursor: "help" }}>📝 {m.justificacion.length > 50 ? m.justificacion.slice(0, 50) + "…" : m.justificacion}</span>
+                        : <span style={{ color: "#d1d5db" }}>—</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -815,6 +821,7 @@ function Operar({ token, perfil }) {
   const [loading, setLoading] = useState(false);
   const [exito, setExito] = useState(null);
   const [error, setError] = useState("");
+  const [justificacion, setJustificacion] = useState("");
   const [historial, setHistorial] = useState([]);
   const [historialKey, setHistorialKey] = useState(0);
   const chartRef = useRef(null);
@@ -903,6 +910,10 @@ function Operar({ token, perfil }) {
   }
 
   async function confirmar() {
+    if (!justificacion.trim()) {
+      setError("Debés escribir una justificación antes de confirmar la operación.");
+      return;
+    }
     setLoading(true);
     try {
       const data = await api("POST", "/api/grupos/operar", {
@@ -910,11 +921,13 @@ function Operar({ token, perfil }) {
         tipo,
         cantidad: parseInt(cantidad),
         confirmar_advertencia: true,
+        justificacion: justificacion.trim(),
       }, token);
       setExito(data);
       setModal(false);
       setPreview(null);
       setCantidad("");
+      setJustificacion("");
       setSeleccionado(null);
       cargarMercado();
     } catch (e) {
@@ -1052,12 +1065,38 @@ function Operar({ token, perfil }) {
               <div className="alert alert-warning">{preview.advertencia}</div>
             )}
 
+            <div style={{ marginTop: 14 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                📝 Justificación de la decisión <span style={{ color: "var(--rojo)" }}>*</span>
+              </label>
+              <p style={{ fontSize: 11, color: "var(--gris)", marginBottom: 6, marginTop: 0 }}>
+                Explicá brevemente por qué tomás esta decisión. Esto quedará registrado en tu bitácora.
+              </p>
+              <textarea
+                value={justificacion}
+                onChange={e => setJustificacion(e.target.value)}
+                placeholder="Ej: La empresa publicó resultados positivos y el precio todavía no refleja la noticia…"
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: "8px 10px",
+                  fontSize: 13,
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  resize: "vertical",
+                  fontFamily: "inherit",
+                  boxSizing: "border-box",
+                  outline: justificacion.trim() ? "none" : "2px solid #fbbf24",
+                }}
+              />
+            </div>
+
             <div className="modal-actions">
-              <button className="btn btn-outline" onClick={() => setModal(false)}>Cancelar</button>
+              <button className="btn btn-outline" onClick={() => { setModal(false); setJustificacion(""); }}>Cancelar</button>
               <button
                 className={`btn ${preview.tipo === "compra" ? "btn-success" : "btn-danger"}`}
                 onClick={confirmar}
-                disabled={loading}
+                disabled={loading || !justificacion.trim()}
               >
                 {loading && <span className="spinner" />}
                 {!preview.coherente_perfil ? "Confirmar igualmente" : "Confirmar"}
@@ -1276,8 +1315,13 @@ function PanelDocente({ token }) {
   const [reporteNoticia, setReporteNoticia] = useState(null);
 
   // Configuración
-  const [config, setConfig] = useState({ nombre_experiencia: "", capital_inicial: 1000000, comision: 0.006, activo: false });
+  const [config, setConfig] = useState({ nombre_experiencia: "", capital_inicial: 1000000, comision: 0.006, activo: false, fecha_inicio: "", fecha_fin: "" });
   const [savingConfig, setSavingConfig] = useState(false);
+
+  // Bitácoras
+  const [bitacoras, setBitacoras] = useState([]);
+  const [loadingBitacoras, setLoadingBitacoras] = useState(false);
+  const [filtroBitacoraGrupo, setFiltroBitacoraGrupo] = useState("");
 
   // Instrumentos (para tab config)
   const [instrumentos, setInstrumentos] = useState([]);
@@ -1311,6 +1355,16 @@ function PanelDocente({ token }) {
       api("GET", "/api/docente/configuracion", null, token),
     ]).then(([g, a, n, r, cfg]) => { setGrupos(g); setAlumnos(a); setNoticias(n); setRanking(r); setConfig(cfg); });
   }, [token]);
+
+  // Cargar bitácoras al entrar a la tab bitacoras
+  useEffect(() => {
+    if (tab !== "bitacoras") return;
+    setLoadingBitacoras(true);
+    api("GET", "/api/docente/reportes/bitacoras", null, token)
+      .then(data => { setBitacoras(data); })
+      .catch(() => {})
+      .finally(() => setLoadingBitacoras(false));
+  }, [tab, token]);
 
   // Cargar instrumentos solo al entrar a la tab config
   useEffect(() => {
@@ -1393,7 +1447,14 @@ function PanelDocente({ token }) {
     if (!cambios) return;
     setSavingInstr(id);
     try {
-      const updated = await api("PUT", `/api/docente/instrumentos/${id}`, cambios, token);
+      // Convertir % ingresado (ej: "15.0") a decimal (0.15) para el backend
+      const payload = { sector: cambios.sector };
+      if (cambios.tendencia_esperada !== "" && cambios.tendencia_esperada !== null) {
+        payload.tendencia_esperada = parseFloat(cambios.tendencia_esperada) / 100;
+      } else {
+        payload.tendencia_esperada = null;
+      }
+      const updated = await api("PUT", `/api/docente/instrumentos/${id}`, payload, token);
       setInstrumentos(prev => prev.map(i => i.id === id ? { ...i, ...updated } : i));
       setEditandoInstr(prev => { const n = { ...prev }; delete n[id]; return n; });
       flash("success", "Instrumento actualizado.");
@@ -1506,11 +1567,12 @@ function PanelDocente({ token }) {
 
       <div className="nav-tabs" style={{ marginBottom: 20, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {[
-          { id: "grupos",   label: "👥 Grupos" },
-          { id: "alumnos",  label: "🎓 Alumnos" },
-          { id: "noticias", label: "📰 Noticias" },
-          { id: "ranking",  label: "🏆 Ranking" },
-          { id: "config",   label: "⚙️ Configuración" },
+          { id: "grupos",    label: "👥 Grupos" },
+          { id: "alumnos",   label: "🎓 Alumnos" },
+          { id: "noticias",  label: "📰 Noticias" },
+          { id: "ranking",   label: "🏆 Ranking" },
+          { id: "bitacoras", label: "📓 Bitácoras" },
+          { id: "config",    label: "⚙️ Configuración" },
         ].map(t => (
           <button key={t.id} className={`btn ${tab === t.id ? "btn-primary" : "btn-outline"} btn-sm`}
             onClick={() => setTab(t.id)}>
@@ -1947,6 +2009,66 @@ function PanelDocente({ token }) {
         </div>
       )}
 
+      {tab === "bitacoras" && (
+        <div className="panel-section">
+          <div className="panel-section-title">📓 Bitácora de decisiones</div>
+          <p style={{ fontSize: 13, color: "var(--gris)", marginBottom: 14 }}>
+            Justificaciones registradas por los grupos al ejecutar operaciones.
+          </p>
+
+          {/* Filtro por grupo */}
+          <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+            <label style={{ fontSize: 13, fontWeight: 600 }}>Filtrar por grupo:</label>
+            <select
+              value={filtroBitacoraGrupo}
+              onChange={e => setFiltroBitacoraGrupo(e.target.value)}
+              style={{ padding: "5px 10px", fontSize: 13, border: "1px solid #d1d5db", borderRadius: 6 }}
+            >
+              <option value="">Todos los grupos</option>
+              {[...new Set(bitacoras.map(b => b.grupo))].map(g => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
+
+          {loadingBitacoras ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Cargando bitácoras…</p>
+          ) : bitacoras.length === 0 ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Todavía no hay justificaciones registradas.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {bitacoras
+                .filter(b => !filtroBitacoraGrupo || b.grupo === filtroBitacoraGrupo)
+                .map(b => (
+                  <div key={b.id} style={{
+                    border: "1px solid var(--borde, #e5e7eb)",
+                    borderRadius: 8,
+                    padding: "12px 16px",
+                    background: b.advertencia_perfil ? "#fef3c7" : "var(--fondo, #f9fafb)",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{b.grupo}</span>
+                        <span style={{
+                          fontWeight: 600, fontSize: 12,
+                          color: b.tipo === "compra" ? "var(--verde)" : "var(--rojo)"
+                        }}>{b.tipo.toUpperCase()}</span>
+                        <span style={{ fontSize: 13 }}>{b.instrumento}</span>
+                        <span style={{ fontSize: 12, color: "var(--gris)" }}>{b.cantidad} u. @ {fmt(b.precio)}</span>
+                        {b.advertencia_perfil && <span style={{ fontSize: 11, color: "#92400e", background: "#fde68a", borderRadius: 4, padding: "2px 6px" }}>⚠️ vs perfil</span>}
+                      </div>
+                      <span style={{ fontSize: 11, color: "var(--gris)" }}>{fmtFecha(b.timestamp)}</span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: 13, color: "var(--texto)", fontStyle: "italic" }}>
+                      "{b.justificacion}"
+                    </p>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {tab === "config" && (
         <div style={{ maxWidth: 520 }}>
           {/* Activar / desactivar simulador */}
@@ -2030,6 +2152,29 @@ function PanelDocente({ token }) {
                   Actualmente: {((config.comision || 0) * 100).toFixed(2)}% → sobre ${fmt(config.capital_inicial)} = {fmt(config.capital_inicial * (config.comision || 0))} por operación de capital completo
                 </span>
               </label>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, flex: 1, minWidth: 180 }}>
+                  <span style={{ fontWeight: 600 }}>Fecha de inicio</span>
+                  <input
+                    type="datetime-local"
+                    value={config.fecha_inicio ? config.fecha_inicio.slice(0, 16) : ""}
+                    onChange={e => setConfig(c => ({ ...c, fecha_inicio: e.target.value }))}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, flex: 1, minWidth: 180 }}>
+                  <span style={{ fontWeight: 600 }}>Fecha de finalización</span>
+                  <input
+                    type="datetime-local"
+                    value={config.fecha_fin ? config.fecha_fin.slice(0, 16) : ""}
+                    onChange={e => setConfig(c => ({ ...c, fecha_fin: e.target.value }))}
+                  />
+                </label>
+              </div>
+              {config.fecha_inicio && config.fecha_fin && (
+                <span style={{ fontSize: 11, color: "var(--gris)" }}>
+                  Duración: {Math.round((new Date(config.fecha_fin) - new Date(config.fecha_inicio)) / (1000*60*60*24))} días
+                </span>
+              )}
               <button
                 className="btn btn-primary"
                 style={{ alignSelf: "flex-start", marginTop: 4 }}
@@ -2038,6 +2183,8 @@ function PanelDocente({ token }) {
                   nombre_experiencia: config.nombre_experiencia,
                   capital_inicial: config.capital_inicial,
                   comision: config.comision,
+                  fecha_inicio: config.fecha_inicio || null,
+                  fecha_fin: config.fecha_fin || null,
                 })}
               >
                 {savingConfig ? "Guardando..." : "💾 Guardar parámetros"}
@@ -2049,7 +2196,7 @@ function PanelDocente({ token }) {
           <div className="panel-section" style={{ maxWidth: "100%" }}>
             <div className="panel-section-title">Instrumentos disponibles</div>
             <p style={{ fontSize: 12, color: "var(--gris)", marginBottom: 12 }}>
-              Configurá el sector y la tendencia esperada de cada instrumento para la duración de la simulación.
+              Configurá el sector y la tendencia esperada de cada instrumento. La tendencia es el % de variación total al vencimiento (ej: +15% alcista, -8% bajista). La simulación deriva el drift por intervalo automáticamente a partir de las fechas configuradas.
             </p>
             {loadingInstr ? (
               <p style={{ fontSize: 13, color: "var(--gris)" }}>Cargando instrumentos...</p>
@@ -2068,8 +2215,9 @@ function PanelDocente({ token }) {
                 <tbody>
                   {instrumentos.map(instr => {
                     const editing = editandoInstr[instr.id] !== undefined;
-                    const vals = editing ? editandoInstr[instr.id] : { sector: instr.sector || "", tendencia_esperada: instr.tendencia_esperada || "neutro" };
-                    const TEND_COLOR = { alcista: "var(--verde)", bajista: "var(--rojo)", neutro: "var(--gris)" };
+                    // tendencia_esperada es un float (ej: 0.15 = +15%) o null
+                    const tendPct = instr.tendencia_esperada != null ? (instr.tendencia_esperada * 100).toFixed(1) : null;
+                    const vals = editing ? editandoInstr[instr.id] : { sector: instr.sector || "", tendencia_esperada: tendPct != null ? tendPct : "" };
                     return (
                       <tr key={instr.id}>
                         <td><b>{instr.ticker}</b></td>
@@ -2088,18 +2236,23 @@ function PanelDocente({ token }) {
                         </td>
                         <td>
                           {editing ? (
-                            <select
-                              value={vals.tendencia_esperada}
-                              onChange={e => setEditandoInstr(prev => ({ ...prev, [instr.id]: { ...prev[instr.id], tendencia_esperada: e.target.value } }))}
-                              style={{ fontSize: 13, padding: "3px 8px", borderRadius: 6, border: "1px solid var(--borde)", background: "var(--fondo)", color: "var(--texto)" }}
-                            >
-                              <option value="alcista">📈 Alcista</option>
-                              <option value="bajista">📉 Bajista</option>
-                              <option value="neutro">➡️ Neutro</option>
-                            </select>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <input
+                                type="number"
+                                value={vals.tendencia_esperada}
+                                onChange={e => setEditandoInstr(prev => ({ ...prev, [instr.id]: { ...prev[instr.id], tendencia_esperada: e.target.value } }))}
+                                style={{ width: 80, fontSize: 13, padding: "3px 8px" }}
+                                step={0.1}
+                                placeholder="0"
+                              />
+                              <span style={{ fontSize: 12, color: "var(--gris)" }}>%</span>
+                            </div>
                           ) : (
-                            <span style={{ fontWeight: 600, fontSize: 13, color: TEND_COLOR[instr.tendencia_esperada] || "var(--gris)" }}>
-                              {instr.tendencia_esperada === "alcista" ? "📈 Alcista" : instr.tendencia_esperada === "bajista" ? "📉 Bajista" : "➡️ Neutro"}
+                            <span style={{ fontWeight: 600, fontSize: 13, color: tendPct != null && parseFloat(tendPct) > 0 ? "var(--verde)" : tendPct != null && parseFloat(tendPct) < 0 ? "var(--rojo)" : "var(--gris)" }}>
+                              {tendPct != null
+                                ? (parseFloat(tendPct) > 0 ? `📈 +${tendPct}%` : parseFloat(tendPct) < 0 ? `📉 ${tendPct}%` : `➡️ 0%`)
+                                : <span style={{ color: "#d1d5db" }}>—</span>
+                              }
                             </span>
                           )}
                         </td>
@@ -2115,7 +2268,7 @@ function PanelDocente({ token }) {
                             </div>
                           ) : (
                             <button className="btn btn-sm btn-outline"
-                              onClick={() => setEditandoInstr(prev => ({ ...prev, [instr.id]: { sector: instr.sector || "", tendencia_esperada: instr.tendencia_esperada || "neutro" } }))}>
+                              onClick={() => setEditandoInstr(prev => ({ ...prev, [instr.id]: { sector: instr.sector || "", tendencia_esperada: instr.tendencia_esperada != null ? (instr.tendencia_esperada * 100).toFixed(1) : "" } }))}>
                               ✏️ Editar
                             </button>
                           )}
