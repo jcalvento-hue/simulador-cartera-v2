@@ -2157,21 +2157,21 @@ function PanelDocente({ token }) {
                 {metricasGrupos.map(m => (
                   <tr key={m.grupo}>
                     <td><b>{m.grupo}</b></td>
-                    <td style={{ textAlign: "right" }} className={m.rendimiento_pct >= 0 ? "pos" : "neg"}>
-                      {m.rendimiento_pct >= 0 ? "+" : ""}{m.rendimiento_pct.toFixed(2)}%
+                    <td style={{ textAlign: "right" }} className={m.rendimiento_pct != null ? (m.rendimiento_pct >= 0 ? "pos" : "neg") : ""}>
+                      {m.rendimiento_pct != null ? `${m.rendimiento_pct >= 0 ? "+" : ""}${m.rendimiento_pct.toFixed(2)}%` : <span style={{ color: "var(--gris)" }}>—</span>}
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      {m.sharpe !== null ? (
+                      {m.sharpe != null ? (
                         <span className={m.sharpe >= 1 ? "pos" : m.sharpe < 0 ? "neg" : ""}>
                           {m.sharpe.toFixed(2)}
                         </span>
                       ) : <span style={{ color: "var(--gris)" }}>—</span>}
                     </td>
-                    <td style={{ textAlign: "right" }} className="neg">
-                      -{m.max_drawdown_pct !== null ? m.max_drawdown_pct.toFixed(2) : "0.00"}%
+                    <td style={{ textAlign: "right" }} className={m.max_drawdown_pct != null ? "neg" : ""}>
+                      {m.max_drawdown_pct != null ? `-${m.max_drawdown_pct.toFixed(2)}%` : <span style={{ color: "var(--gris)" }}>—</span>}
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      {m.volatilidad_pct !== null ? m.volatilidad_pct.toFixed(2) : "0.00"}%
+                      {m.volatilidad_pct != null ? `${m.volatilidad_pct.toFixed(2)}%` : <span style={{ color: "var(--gris)" }}>—</span>}
                     </td>
                     <td style={{ textAlign: "right", color: "var(--gris)" }}>{m.n_snapshots}</td>
                   </tr>
