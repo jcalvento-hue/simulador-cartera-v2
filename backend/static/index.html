@@ -636,6 +636,7 @@ function MiCartera({ token, perfil }) {
   const [subTab, setSubTab] = useState("posiciones");
   const [movimientos, setMovimientos] = useState([]);
   const [loadingMov, setLoadingMov] = useState(false);
+  const [metricas, setMetricas] = useState(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -655,6 +656,12 @@ function MiCartera({ token, perfil }) {
       .catch(() => {})
       .finally(() => setLoadingMov(false));
   }, [subTab, token]);
+
+  useEffect(() => {
+    api("GET", "/api/grupos/metricas", null, token)
+      .then(setMetricas)
+      .catch(() => {});
+  }, [token]);
 
   if (loading) return <div className="page"><div className="card">Cargando cartera...</div></div>;
   if (!data) return <div className="page"><div className="alert alert-error">Error al cargar cartera.</div></div>;
@@ -687,6 +694,45 @@ function MiCartera({ token, perfil }) {
           <div className={`kpi-value ${rend >= 0 ? "pos" : "neg"}`}>{fmtPct(rend)}</div>
         </div>
       </div>
+
+      {metricas && metricas.n_snapshots >= 2 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-title">📊 Métricas de Riesgo</div>
+          <div className="kpi-row" style={{ gap: 12 }}>
+            <div className="kpi" style={{ flex: 1 }}>
+              <div className="kpi-label">Sharpe Ratio</div>
+              <div className={`kpi-value ${metricas.sharpe === null ? "" : metricas.sharpe >= 1 ? "pos" : metricas.sharpe >= 0 ? "" : "neg"}`}
+                style={{ fontSize: 22 }}>
+                {metricas.sharpe !== null ? metricas.sharpe.toFixed(2) : "—"}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>
+                {metricas.sharpe === null ? "Sin datos" : metricas.sharpe >= 1 ? "Excelente" : metricas.sharpe >= 0.5 ? "Bueno" : metricas.sharpe >= 0 ? "Aceptable" : "Negativo"}
+              </div>
+            </div>
+            <div className="kpi" style={{ flex: 1 }}>
+              <div className="kpi-label">Máx. Drawdown</div>
+              <div className="kpi-value neg" style={{ fontSize: 22 }}>
+                -{metricas.max_drawdown_pct !== null ? metricas.max_drawdown_pct.toFixed(2) : "0.00"}%
+              </div>
+              <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>Caída máx. desde pico</div>
+            </div>
+            <div className="kpi" style={{ flex: 1 }}>
+              <div className="kpi-label">Volatilidad (anual.)</div>
+              <div className="kpi-value" style={{ fontSize: 22 }}>
+                {metricas.volatilidad_pct !== null ? metricas.volatilidad_pct.toFixed(2) : "0.00"}%
+              </div>
+              <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>Desv. est. × √252</div>
+            </div>
+            <div className="kpi" style={{ flex: 1 }}>
+              <div className="kpi-label">Rendimiento total</div>
+              <div className={`kpi-value ${metricas.rendimiento_pct >= 0 ? "pos" : "neg"}`} style={{ fontSize: 22 }}>
+                {metricas.rendimiento_pct >= 0 ? "+" : ""}{metricas.rendimiento_pct.toFixed(2)}%
+              </div>
+              <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>{metricas.n_snapshots} operaciones</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {perfil && (
         <div style={{ marginBottom: 12 }}>
@@ -794,11 +840,10 @@ function MiCartera({ token, perfil }) {
                     <td style={{ textAlign: "right" }}>{m.precio != null ? fmt(m.precio) : <span style={{ color: "#d1d5db" }}>—</span>}</td>
                     <td style={{ textAlign: "right" }}>{m.comision != null ? fmt(m.comision) : <span style={{ color: "#d1d5db" }}>—</span>}</td>
                     <td style={{ textAlign: "right", fontWeight: 600 }}>{fmt(m.total)}</td>
-                    <td style={{ fontSize: 12, color: "var(--gris)", maxWidth: 220 }}>
+                    <td style={{ maxWidth: 200, fontSize: 12, color: "var(--gris)" }}>
                       {m.justificacion
-                        ? <span title={m.justificacion}>📓 {m.justificacion.length > 50 ? m.justificacion.slice(0, 50) + "…" : m.justificacion}</span>
-                        : <span style={{ color: "#d1d5db" }}>—</span>
-                      }
+                        ? <span title={m.justificacion} style={{ cursor: "help" }}>📝 {m.justificacion.length > 50 ? m.justificacion.slice(0, 50) + "…" : m.justificacion}</span>
+                        : <span style={{ color: "#d1d5db" }}>—</span>}
                     </td>
                   </tr>
                 ))}
@@ -822,7 +867,7 @@ function Operar({ token, perfil }) {
   const [loading, setLoading] = useState(false);
   const [exito, setExito] = useState(null);
   const [error, setError] = useState("");
-  const [justificacion, setJustificacion] = useState("");   // bitácora: razón de la operación
+  const [justificacion, setJustificacion] = useState("");
   const [historial, setHistorial] = useState([]);
   const [historialKey, setHistorialKey] = useState(0);
   const chartRef = useRef(null);
@@ -912,7 +957,7 @@ function Operar({ token, perfil }) {
 
   async function confirmar() {
     if (!justificacion.trim()) {
-      setError("Debés completar la justificación antes de confirmar la operación.");
+      setError("Debés escribir una justificación antes de confirmar la operación.");
       return;
     }
     setLoading(true);
@@ -928,8 +973,8 @@ function Operar({ token, perfil }) {
       setModal(false);
       setPreview(null);
       setCantidad("");
-      setSeleccionado(null);
       setJustificacion("");
+      setSeleccionado(null);
       cargarMercado();
     } catch (e) {
       setError(e.message);
@@ -1066,33 +1111,30 @@ function Operar({ token, perfil }) {
               <div className="alert alert-warning">{preview.advertencia}</div>
             )}
 
-            {/* Bitácora de decisiones — campo obligatorio */}
-            <div className="form-group" style={{ marginBottom: 12 }}>
-              <label className="form-label" style={{ fontWeight: 600 }}>
-                📓 Justificación de la operación <span style={{ color: "var(--rojo)" }}>*</span>
+            <div style={{ marginTop: 14 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                📝 Justificación de la decisión <span style={{ color: "var(--rojo)" }}>*</span>
               </label>
+              <p style={{ fontSize: 11, color: "var(--gris)", marginBottom: 6, marginTop: 0 }}>
+                Explicá brevemente por qué tomás esta decisión. Esto quedará registrado en tu bitácora.
+              </p>
               <textarea
-                rows={3}
                 value={justificacion}
                 onChange={e => setJustificacion(e.target.value)}
-                placeholder="¿Por qué tomás esta decisión? (obligatorio)"
+                placeholder="Ej: La empresa publicó resultados positivos y el precio todavía no refleja la noticia…"
+                rows={3}
                 style={{
                   width: "100%",
+                  padding: "8px 10px",
+                  fontSize: 13,
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
                   resize: "vertical",
                   fontFamily: "inherit",
-                  fontSize: 13,
-                  padding: "8px 10px",
-                  borderRadius: 6,
-                  border: justificacion.trim() ? "1.5px solid var(--borde, #d1d5db)" : "1.5px solid #f59e0b",
-                  outline: "none",
                   boxSizing: "border-box",
+                  outline: justificacion.trim() ? "none" : "2px solid #fbbf24",
                 }}
               />
-              {!justificacion.trim() && (
-                <p style={{ fontSize: 11, color: "#f59e0b", margin: "4px 0 0" }}>
-                  Este campo es obligatorio para registrar tu decisión en la bitácora.
-                </p>
-              )}
             </div>
 
             <div className="modal-actions">
@@ -1319,13 +1361,17 @@ function PanelDocente({ token }) {
   const [reporteNoticia, setReporteNoticia] = useState(null);
 
   // Configuración
-  const [config, setConfig] = useState({ nombre_experiencia: "", capital_inicial: 1000000, comision: 0.006, activo: false });
+  const [config, setConfig] = useState({ nombre_experiencia: "", capital_inicial: 1000000, comision: 0.006, activo: false, fecha_inicio: "", fecha_fin: "" });
   const [savingConfig, setSavingConfig] = useState(false);
 
-  // Bitácoras de decisiones
+  // Bitácoras
   const [bitacoras, setBitacoras] = useState([]);
   const [loadingBitacoras, setLoadingBitacoras] = useState(false);
   const [filtroBitacoraGrupo, setFiltroBitacoraGrupo] = useState("");
+
+  // Métricas de riesgo por grupo
+  const [metricasGrupos, setMetricasGrupos] = useState([]);
+  const [loadingMetricas, setLoadingMetricas] = useState(false);
 
   // Instrumentos (para tab config)
   const [instrumentos, setInstrumentos] = useState([]);
@@ -1360,6 +1406,26 @@ function PanelDocente({ token }) {
     ]).then(([g, a, n, r, cfg]) => { setGrupos(g); setAlumnos(a); setNoticias(n); setRanking(r); setConfig(cfg); });
   }, [token]);
 
+  // Cargar bitácoras al entrar a la tab bitacoras
+  useEffect(() => {
+    if (tab !== "bitacoras") return;
+    setLoadingBitacoras(true);
+    api("GET", "/api/docente/reportes/bitacoras", null, token)
+      .then(data => { setBitacoras(data); })
+      .catch(() => {})
+      .finally(() => setLoadingBitacoras(false));
+  }, [tab, token]);
+
+  // Cargar métricas de riesgo al entrar a la tab metricas
+  useEffect(() => {
+    if (tab !== "metricas") return;
+    setLoadingMetricas(true);
+    api("GET", "/api/docente/reportes/metricas", null, token)
+      .then(data => { setMetricasGrupos(data); })
+      .catch(() => {})
+      .finally(() => setLoadingMetricas(false));
+  }, [tab, token]);
+
   // Cargar instrumentos solo al entrar a la tab config
   useEffect(() => {
     if (tab !== "config") return;
@@ -1369,16 +1435,6 @@ function PanelDocente({ token }) {
       .then(data => { setInstrumentos(data); })
       .catch(() => {})
       .finally(() => setLoadingInstr(false));
-  }, [tab, token]);
-
-  // Cargar bitácoras solo al entrar a la tab bitacoras
-  useEffect(() => {
-    if (tab !== "bitacoras") return;
-    setLoadingBitacoras(true);
-    api("GET", "/api/docente/reportes/bitacoras", null, token)
-      .then(data => { setBitacoras(data); })
-      .catch(() => {})
-      .finally(() => setLoadingBitacoras(false));
   }, [tab, token]);
 
   async function abrirPerfilModal(grupo) {
@@ -1451,7 +1507,14 @@ function PanelDocente({ token }) {
     if (!cambios) return;
     setSavingInstr(id);
     try {
-      const updated = await api("PUT", `/api/docente/instrumentos/${id}`, cambios, token);
+      // Convertir % ingresado (ej: "15.0") a decimal (0.15) para el backend
+      const payload = { sector: cambios.sector };
+      if (cambios.tendencia_esperada !== "" && cambios.tendencia_esperada !== null) {
+        payload.tendencia_esperada = parseFloat(cambios.tendencia_esperada) / 100;
+      } else {
+        payload.tendencia_esperada = null;
+      }
+      const updated = await api("PUT", `/api/docente/instrumentos/${id}`, payload, token);
       setInstrumentos(prev => prev.map(i => i.id === id ? { ...i, ...updated } : i));
       setEditandoInstr(prev => { const n = { ...prev }; delete n[id]; return n; });
       flash("success", "Instrumento actualizado.");
@@ -1568,6 +1631,7 @@ function PanelDocente({ token }) {
           { id: "alumnos",   label: "🎓 Alumnos" },
           { id: "noticias",  label: "📰 Noticias" },
           { id: "ranking",   label: "🏆 Ranking" },
+          { id: "metricas",  label: "📊 Métricas" },
           { id: "bitacoras", label: "📓 Bitácoras" },
           { id: "config",    label: "⚙️ Configuración" },
         ].map(t => (
@@ -2006,65 +2070,112 @@ function PanelDocente({ token }) {
         </div>
       )}
 
+      {tab === "metricas" && (
+        <div className="panel-section">
+          <div className="card-title" style={{ marginBottom: 16 }}>📊 Métricas de Riesgo por Grupo</div>
+          {loadingMetricas ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Calculando métricas...</p>
+          ) : metricasGrupos.length === 0 ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Ningún grupo tiene suficientes operaciones para calcular métricas (mínimo 2).</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Grupo</th>
+                  <th style={{ textAlign: "right" }}>Rendimiento</th>
+                  <th style={{ textAlign: "right" }}>Sharpe Ratio</th>
+                  <th style={{ textAlign: "right" }}>Máx. Drawdown</th>
+                  <th style={{ textAlign: "right" }}>Volatilidad (anual.)</th>
+                  <th style={{ textAlign: "right" }}>Operaciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metricasGrupos.map(m => (
+                  <tr key={m.grupo}>
+                    <td><b>{m.grupo}</b></td>
+                    <td style={{ textAlign: "right" }} className={m.rendimiento_pct >= 0 ? "pos" : "neg"}>
+                      {m.rendimiento_pct >= 0 ? "+" : ""}{m.rendimiento_pct.toFixed(2)}%
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      {m.sharpe !== null ? (
+                        <span className={m.sharpe >= 1 ? "pos" : m.sharpe < 0 ? "neg" : ""}>
+                          {m.sharpe.toFixed(2)}
+                        </span>
+                      ) : <span style={{ color: "var(--gris)" }}>—</span>}
+                    </td>
+                    <td style={{ textAlign: "right" }} className="neg">
+                      -{m.max_drawdown_pct !== null ? m.max_drawdown_pct.toFixed(2) : "0.00"}%
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      {m.volatilidad_pct !== null ? m.volatilidad_pct.toFixed(2) : "0.00"}%
+                    </td>
+                    <td style={{ textAlign: "right", color: "var(--gris)" }}>{m.n_snapshots}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div style={{ marginTop: 12, fontSize: 12, color: "var(--gris)" }}>
+            <b>Sharpe Ratio</b>: retorno / riesgo (≥1 excelente, 0.5-1 bueno, &lt;0 negativo) · <b>Drawdown</b>: caída máxima desde el pico · <b>Volatilidad</b>: desv. estándar de retornos × √252
+          </div>
+        </div>
+      )}
+
       {tab === "bitacoras" && (
         <div className="panel-section">
-          <div className="panel-section-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-            <span>📓 Bitácora de decisiones</span>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <select
-                value={filtroBitacoraGrupo}
-                onChange={e => {
-                  setFiltroBitacoraGrupo(e.target.value);
-                  setLoadingBitacoras(true);
-                  const params = e.target.value ? `?grupo_id=${e.target.value}` : "";
-                  api("GET", `/api/docente/reportes/bitacoras${params}`, null, token)
-                    .then(data => setBitacoras(data))
-                    .catch(() => {})
-                    .finally(() => setLoadingBitacoras(false));
-                }}
-                style={{ fontSize: 13, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--borde, #d1d5db)" }}
-              >
-                <option value="">Todos los grupos</option>
-                {grupos.map(g => <option key={g.id} value={g.id}>{g.nombre}</option>)}
-              </select>
-              <button className="btn btn-outline btn-sm" onClick={() => {
-                setLoadingBitacoras(true);
-                const params = filtroBitacoraGrupo ? `?grupo_id=${filtroBitacoraGrupo}` : "";
-                api("GET", `/api/docente/reportes/bitacoras${params}`, null, token)
-                  .then(data => setBitacoras(data))
-                  .catch(() => {})
-                  .finally(() => setLoadingBitacoras(false));
-              }}>🔄 Recargar</button>
-            </div>
-          </div>
-          {loadingBitacoras ? (
-            <p style={{ color: "var(--gris)", fontSize: 13 }}>Cargando bitácoras...</p>
-          ) : bitacoras.length === 0 ? (
-            <p style={{ color: "var(--gris)", fontSize: 13 }}>Todavía no hay operaciones con justificación registradas.</p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
-              {bitacoras.map(b => (
-                <div key={b.id} style={{
-                  border: "1px solid var(--borde, #e5e7eb)",
-                  borderRadius: 8,
-                  padding: "12px 16px",
-                  background: "var(--blanco)",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 700, fontSize: 14 }}>{b.grupo}</span>
-                    <span className="badge" style={{ background: b.tipo === "compra" ? "#dcfce7" : "#fee2e2", color: b.tipo === "compra" ? "#166534" : "#991b1b", textTransform: "capitalize" }}>{b.tipo}</span>
-                    <span style={{ fontWeight: 600 }}>{b.instrumento}</span>
-                    <span style={{ color: "var(--gris)", fontSize: 12 }}>× {b.cantidad} @ {fmt(b.precio)}</span>
-                    <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--gris)", whiteSpace: "nowrap" }}>{new Date(b.timestamp).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                  </div>
-                  <div style={{ fontSize: 13, color: "#374151", background: "#f9fafb", borderRadius: 6, padding: "8px 12px", lineHeight: 1.5 }}>
-                    "{b.justificacion}"
-                  </div>
-                  {b.advertencia_perfil && (
-                    <div style={{ fontSize: 11, color: "#d97706", marginTop: 6 }}>⚠️ Operación fuera del perfil de riesgo asignado</div>
-                  )}
-                </div>
+          <div className="panel-section-title">📓 Bitácora de decisiones</div>
+          <p style={{ fontSize: 13, color: "var(--gris)", marginBottom: 14 }}>
+            Justificaciones registradas por los grupos al ejecutar operaciones.
+          </p>
+
+          {/* Filtro por grupo */}
+          <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+            <label style={{ fontSize: 13, fontWeight: 600 }}>Filtrar por grupo:</label>
+            <select
+              value={filtroBitacoraGrupo}
+              onChange={e => setFiltroBitacoraGrupo(e.target.value)}
+              style={{ padding: "5px 10px", fontSize: 13, border: "1px solid #d1d5db", borderRadius: 6 }}
+            >
+              <option value="">Todos los grupos</option>
+              {[...new Set(bitacoras.map(b => b.grupo))].map(g => (
+                <option key={g} value={g}>{g}</option>
               ))}
+            </select>
+          </div>
+
+          {loadingBitacoras ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Cargando bitácoras…</p>
+          ) : bitacoras.length === 0 ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Todavía no hay justificaciones registradas.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {bitacoras
+                .filter(b => !filtroBitacoraGrupo || b.grupo === filtroBitacoraGrupo)
+                .map(b => (
+                  <div key={b.id} style={{
+                    border: "1px solid var(--borde, #e5e7eb)",
+                    borderRadius: 8,
+                    padding: "12px 16px",
+                    background: b.advertencia_perfil ? "#fef3c7" : "var(--fondo, #f9fafb)",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{b.grupo}</span>
+                        <span style={{
+                          fontWeight: 600, fontSize: 12,
+                          color: b.tipo === "compra" ? "var(--verde)" : "var(--rojo)"
+                        }}>{b.tipo.toUpperCase()}</span>
+                        <span style={{ fontSize: 13 }}>{b.instrumento}</span>
+                        <span style={{ fontSize: 12, color: "var(--gris)" }}>{b.cantidad} u. @ {fmt(b.precio)}</span>
+                        {b.advertencia_perfil && <span style={{ fontSize: 11, color: "#92400e", background: "#fde68a", borderRadius: 4, padding: "2px 6px" }}>⚠️ vs perfil</span>}
+                      </div>
+                      <span style={{ fontSize: 11, color: "var(--gris)" }}>{fmtFecha(b.timestamp)}</span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: 13, color: "var(--texto)", fontStyle: "italic" }}>
+                      "{b.justificacion}"
+                    </p>
+                  </div>
+                ))}
             </div>
           )}
         </div>
@@ -2153,6 +2264,29 @@ function PanelDocente({ token }) {
                   Actualmente: {((config.comision || 0) * 100).toFixed(2)}% → sobre ${fmt(config.capital_inicial)} = {fmt(config.capital_inicial * (config.comision || 0))} por operación de capital completo
                 </span>
               </label>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, flex: 1, minWidth: 180 }}>
+                  <span style={{ fontWeight: 600 }}>Fecha de inicio</span>
+                  <input
+                    type="datetime-local"
+                    value={config.fecha_inicio ? config.fecha_inicio.slice(0, 16) : ""}
+                    onChange={e => setConfig(c => ({ ...c, fecha_inicio: e.target.value }))}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, flex: 1, minWidth: 180 }}>
+                  <span style={{ fontWeight: 600 }}>Fecha de finalización</span>
+                  <input
+                    type="datetime-local"
+                    value={config.fecha_fin ? config.fecha_fin.slice(0, 16) : ""}
+                    onChange={e => setConfig(c => ({ ...c, fecha_fin: e.target.value }))}
+                  />
+                </label>
+              </div>
+              {config.fecha_inicio && config.fecha_fin && (
+                <span style={{ fontSize: 11, color: "var(--gris)" }}>
+                  Duración: {Math.round((new Date(config.fecha_fin) - new Date(config.fecha_inicio)) / (1000*60*60*24))} días
+                </span>
+              )}
               <button
                 className="btn btn-primary"
                 style={{ alignSelf: "flex-start", marginTop: 4 }}
@@ -2161,6 +2295,8 @@ function PanelDocente({ token }) {
                   nombre_experiencia: config.nombre_experiencia,
                   capital_inicial: config.capital_inicial,
                   comision: config.comision,
+                  fecha_inicio: config.fecha_inicio || null,
+                  fecha_fin: config.fecha_fin || null,
                 })}
               >
                 {savingConfig ? "Guardando..." : "💾 Guardar parámetros"}
@@ -2172,7 +2308,7 @@ function PanelDocente({ token }) {
           <div className="panel-section" style={{ maxWidth: "100%" }}>
             <div className="panel-section-title">Instrumentos disponibles</div>
             <p style={{ fontSize: 12, color: "var(--gris)", marginBottom: 12 }}>
-              Configurá el sector y la tendencia esperada de cada instrumento para la duración de la simulación.
+              Configurá el sector y la tendencia esperada de cada instrumento. La tendencia es el % de variación total al vencimiento (ej: +15% alcista, -8% bajista). La simulación deriva el drift por intervalo automáticamente a partir de las fechas configuradas.
             </p>
             {loadingInstr ? (
               <p style={{ fontSize: 13, color: "var(--gris)" }}>Cargando instrumentos...</p>
@@ -2191,8 +2327,9 @@ function PanelDocente({ token }) {
                 <tbody>
                   {instrumentos.map(instr => {
                     const editing = editandoInstr[instr.id] !== undefined;
-                    const vals = editing ? editandoInstr[instr.id] : { sector: instr.sector || "", tendencia_esperada: instr.tendencia_esperada || "neutro" };
-                    const TEND_COLOR = { alcista: "var(--verde)", bajista: "var(--rojo)", neutro: "var(--gris)" };
+                    // tendencia_esperada es un float (ej: 0.15 = +15%) o null
+                    const tendPct = instr.tendencia_esperada != null ? (instr.tendencia_esperada * 100).toFixed(1) : null;
+                    const vals = editing ? editandoInstr[instr.id] : { sector: instr.sector || "", tendencia_esperada: tendPct != null ? tendPct : "" };
                     return (
                       <tr key={instr.id}>
                         <td><b>{instr.ticker}</b></td>
@@ -2211,18 +2348,23 @@ function PanelDocente({ token }) {
                         </td>
                         <td>
                           {editing ? (
-                            <select
-                              value={vals.tendencia_esperada}
-                              onChange={e => setEditandoInstr(prev => ({ ...prev, [instr.id]: { ...prev[instr.id], tendencia_esperada: e.target.value } }))}
-                              style={{ fontSize: 13, padding: "3px 8px", borderRadius: 6, border: "1px solid var(--borde)", background: "var(--fondo)", color: "var(--texto)" }}
-                            >
-                              <option value="alcista">📈 Alcista</option>
-                              <option value="bajista">📉 Bajista</option>
-                              <option value="neutro">➡️ Neutro</option>
-                            </select>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <input
+                                type="number"
+                                value={vals.tendencia_esperada}
+                                onChange={e => setEditandoInstr(prev => ({ ...prev, [instr.id]: { ...prev[instr.id], tendencia_esperada: e.target.value } }))}
+                                style={{ width: 80, fontSize: 13, padding: "3px 8px" }}
+                                step={0.1}
+                                placeholder="0"
+                              />
+                              <span style={{ fontSize: 12, color: "var(--gris)" }}>%</span>
+                            </div>
                           ) : (
-                            <span style={{ fontWeight: 600, fontSize: 13, color: TEND_COLOR[instr.tendencia_esperada] || "var(--gris)" }}>
-                              {instr.tendencia_esperada === "alcista" ? "📈 Alcista" : instr.tendencia_esperada === "bajista" ? "📉 Bajista" : "➡️ Neutro"}
+                            <span style={{ fontWeight: 600, fontSize: 13, color: tendPct != null && parseFloat(tendPct) > 0 ? "var(--verde)" : tendPct != null && parseFloat(tendPct) < 0 ? "var(--rojo)" : "var(--gris)" }}>
+                              {tendPct != null
+                                ? (parseFloat(tendPct) > 0 ? `📈 +${tendPct}%` : parseFloat(tendPct) < 0 ? `📉 ${tendPct}%` : `➡️ 0%`)
+                                : <span style={{ color: "#d1d5db" }}>—</span>
+                              }
                             </span>
                           )}
                         </td>
@@ -2238,7 +2380,7 @@ function PanelDocente({ token }) {
                             </div>
                           ) : (
                             <button className="btn btn-sm btn-outline"
-                              onClick={() => setEditandoInstr(prev => ({ ...prev, [instr.id]: { sector: instr.sector || "", tendencia_esperada: instr.tendencia_esperada || "neutro" } }))}>
+                              onClick={() => setEditandoInstr(prev => ({ ...prev, [instr.id]: { sector: instr.sector || "", tendencia_esperada: instr.tendencia_esperada != null ? (instr.tendencia_esperada * 100).toFixed(1) : "" } }))}>
                               ✏️ Editar
                             </button>
                           )}

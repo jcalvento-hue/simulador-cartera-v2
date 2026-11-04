@@ -636,6 +636,7 @@ function MiCartera({ token, perfil }) {
   const [subTab, setSubTab] = useState("posiciones");
   const [movimientos, setMovimientos] = useState([]);
   const [loadingMov, setLoadingMov] = useState(false);
+  const [metricas, setMetricas] = useState(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -655,6 +656,12 @@ function MiCartera({ token, perfil }) {
       .catch(() => {})
       .finally(() => setLoadingMov(false));
   }, [subTab, token]);
+
+  useEffect(() => {
+    api("GET", "/api/grupos/metricas", null, token)
+      .then(setMetricas)
+      .catch(() => {});
+  }, [token]);
 
   if (loading) return <div className="page"><div className="card">Cargando cartera...</div></div>;
   if (!data) return <div className="page"><div className="alert alert-error">Error al cargar cartera.</div></div>;
@@ -687,6 +694,45 @@ function MiCartera({ token, perfil }) {
           <div className={`kpi-value ${rend >= 0 ? "pos" : "neg"}`}>{fmtPct(rend)}</div>
         </div>
       </div>
+
+      {metricas && metricas.n_snapshots >= 2 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-title">📊 Métricas de Riesgo</div>
+          <div className="kpi-row" style={{ gap: 12 }}>
+            <div className="kpi" style={{ flex: 1 }}>
+              <div className="kpi-label">Sharpe Ratio</div>
+              <div className={`kpi-value ${metricas.sharpe === null ? "" : metricas.sharpe >= 1 ? "pos" : metricas.sharpe >= 0 ? "" : "neg"}`}
+                style={{ fontSize: 22 }}>
+                {metricas.sharpe !== null ? metricas.sharpe.toFixed(2) : "—"}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>
+                {metricas.sharpe === null ? "Sin datos" : metricas.sharpe >= 1 ? "Excelente" : metricas.sharpe >= 0.5 ? "Bueno" : metricas.sharpe >= 0 ? "Aceptable" : "Negativo"}
+              </div>
+            </div>
+            <div className="kpi" style={{ flex: 1 }}>
+              <div className="kpi-label">Máx. Drawdown</div>
+              <div className="kpi-value neg" style={{ fontSize: 22 }}>
+                -{metricas.max_drawdown_pct !== null ? metricas.max_drawdown_pct.toFixed(2) : "0.00"}%
+              </div>
+              <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>Caída máx. desde pico</div>
+            </div>
+            <div className="kpi" style={{ flex: 1 }}>
+              <div className="kpi-label">Volatilidad (anual.)</div>
+              <div className="kpi-value" style={{ fontSize: 22 }}>
+                {metricas.volatilidad_pct !== null ? metricas.volatilidad_pct.toFixed(2) : "0.00"}%
+              </div>
+              <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>Desv. est. × √252</div>
+            </div>
+            <div className="kpi" style={{ flex: 1 }}>
+              <div className="kpi-label">Rendimiento total</div>
+              <div className={`kpi-value ${metricas.rendimiento_pct >= 0 ? "pos" : "neg"}`} style={{ fontSize: 22 }}>
+                {metricas.rendimiento_pct >= 0 ? "+" : ""}{metricas.rendimiento_pct.toFixed(2)}%
+              </div>
+              <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>{metricas.n_snapshots} operaciones</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {perfil && (
         <div style={{ marginBottom: 12 }}>
@@ -1323,6 +1369,10 @@ function PanelDocente({ token }) {
   const [loadingBitacoras, setLoadingBitacoras] = useState(false);
   const [filtroBitacoraGrupo, setFiltroBitacoraGrupo] = useState("");
 
+  // Métricas de riesgo por grupo
+  const [metricasGrupos, setMetricasGrupos] = useState([]);
+  const [loadingMetricas, setLoadingMetricas] = useState(false);
+
   // Instrumentos (para tab config)
   const [instrumentos, setInstrumentos] = useState([]);
   const [loadingInstr, setLoadingInstr] = useState(false);
@@ -1364,6 +1414,16 @@ function PanelDocente({ token }) {
       .then(data => { setBitacoras(data); })
       .catch(() => {})
       .finally(() => setLoadingBitacoras(false));
+  }, [tab, token]);
+
+  // Cargar métricas de riesgo al entrar a la tab metricas
+  useEffect(() => {
+    if (tab !== "metricas") return;
+    setLoadingMetricas(true);
+    api("GET", "/api/docente/reportes/metricas", null, token)
+      .then(data => { setMetricasGrupos(data); })
+      .catch(() => {})
+      .finally(() => setLoadingMetricas(false));
   }, [tab, token]);
 
   // Cargar instrumentos solo al entrar a la tab config
@@ -1571,6 +1631,7 @@ function PanelDocente({ token }) {
           { id: "alumnos",   label: "🎓 Alumnos" },
           { id: "noticias",  label: "📰 Noticias" },
           { id: "ranking",   label: "🏆 Ranking" },
+          { id: "metricas",  label: "📊 Métricas" },
           { id: "bitacoras", label: "📓 Bitácoras" },
           { id: "config",    label: "⚙️ Configuración" },
         ].map(t => (
@@ -2006,6 +2067,57 @@ function PanelDocente({ token }) {
               <div className={`ranking-rend ${g.rendimiento_pct >= 0 ? "pos" : "neg"}`}>{fmtPct(g.rendimiento_pct)}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === "metricas" && (
+        <div className="panel-section">
+          <div className="card-title" style={{ marginBottom: 16 }}>📊 Métricas de Riesgo por Grupo</div>
+          {loadingMetricas ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Calculando métricas...</p>
+          ) : metricasGrupos.length === 0 ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Ningún grupo tiene suficientes operaciones para calcular métricas (mínimo 2).</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Grupo</th>
+                  <th style={{ textAlign: "right" }}>Rendimiento</th>
+                  <th style={{ textAlign: "right" }}>Sharpe Ratio</th>
+                  <th style={{ textAlign: "right" }}>Máx. Drawdown</th>
+                  <th style={{ textAlign: "right" }}>Volatilidad (anual.)</th>
+                  <th style={{ textAlign: "right" }}>Operaciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metricasGrupos.map(m => (
+                  <tr key={m.grupo}>
+                    <td><b>{m.grupo}</b></td>
+                    <td style={{ textAlign: "right" }} className={m.rendimiento_pct >= 0 ? "pos" : "neg"}>
+                      {m.rendimiento_pct >= 0 ? "+" : ""}{m.rendimiento_pct.toFixed(2)}%
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      {m.sharpe !== null ? (
+                        <span className={m.sharpe >= 1 ? "pos" : m.sharpe < 0 ? "neg" : ""}>
+                          {m.sharpe.toFixed(2)}
+                        </span>
+                      ) : <span style={{ color: "var(--gris)" }}>—</span>}
+                    </td>
+                    <td style={{ textAlign: "right" }} className="neg">
+                      -{m.max_drawdown_pct !== null ? m.max_drawdown_pct.toFixed(2) : "0.00"}%
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      {m.volatilidad_pct !== null ? m.volatilidad_pct.toFixed(2) : "0.00"}%
+                    </td>
+                    <td style={{ textAlign: "right", color: "var(--gris)" }}>{m.n_snapshots}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div style={{ marginTop: 12, fontSize: 12, color: "var(--gris)" }}>
+            <b>Sharpe Ratio</b>: retorno / riesgo (≥1 excelente, 0.5-1 bueno, &lt;0 negativo) · <b>Drawdown</b>: caída máxima desde el pico · <b>Volatilidad</b>: desv. estándar de retornos × √252
+          </div>
         </div>
       )}
 

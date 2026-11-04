@@ -10,7 +10,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from datetime import datetime, timedelta  # noqa: F401
 from models import (
     Grupo, Instrumento, Posicion, Operacion, Noticia,
-    LecturaNoticia, RespuestaEncuesta, Configuracion, Caucion, PerfilGrupo, get_db
+    LecturaNoticia, RespuestaEncuesta, Configuracion, Caucion, PerfilGrupo,
+    HistorialCapital, get_db
 )
 from auth import get_current_grupo
 from perfil_riesgo import PREGUNTAS, calcular_perfil, validar_coherencia
@@ -375,6 +376,16 @@ def ejecutar_operacion(
         justificacion=body.justificacion,
     )
     db.add(op)
+
+    # Snapshot de capital para métricas de riesgo
+    posiciones_act = db.query(Posicion).filter(Posicion.grupo_id == grupo.id).all()
+    valor_cartera_act = sum(
+        p.cantidad * (db.query(Instrumento).get(p.instrumento_id).precio_actual or 0)
+        for p in posiciones_act
+    )
+    capital_snap = grupo.capital_disponible + valor_cartera_act
+    db.add(HistorialCapital(grupo_id=grupo.id, capital_total=round(capital_snap, 2)))
+
     db.commit()
 
     return {
@@ -643,3 +654,65 @@ def get_ranking(db: Session = Depends(get_db), _=Depends(get_current_grupo)):
     for i, r in enumerate(ranking, 1):
         r["posicion"] = i
     return ranking
+
+
+def _calcular_metricas(snapshots, capital_inicial):
+    """Calcula Sharpe ratio, max drawdown y volatilidad a partir de snapshots de capital."""
+    import math
+    if len(snapshots) < 2:
+        return {"sharpe": None, "max_drawdown_pct": None, "volatilidad_pct": None, "n_snapshots": len(snapshots)}
+
+    valores = [s.capital_total for s in snapshots]
+    # Retornos periodo a periodo
+    retornos = [(valores[i] - valores[i-1]) / valores[i-1] for i in range(1, len(valores))]
+    n = len(retornos)
+    if n == 0:
+        return {"sharpe": None, "max_drawdown_pct": None, "volatilidad_pct": None, "n_snapshots": len(snapshots)}
+
+    media = sum(retornos) / n
+    varianza = sum((r - media) ** 2 for r in retornos) / n
+    std = math.sqrt(varianza) if varianza > 0 else 0
+
+    # Sharpe (tasa libre de riesgo = 0 para simplificar)
+    sharpe = round(media / std, 3) if std > 0 else None
+
+    # Volatilidad anualizada (asumiendo ~252 operaciones por año como proxy)
+    vol_anual = round(std * math.sqrt(252) * 100, 2) if std > 0 else 0.0
+
+    # Máximo drawdown
+    max_dd = 0.0
+    pico = valores[0]
+    for v in valores[1:]:
+        if v > pico:
+            pico = v
+        dd = (pico - v) / pico if pico > 0 else 0
+        if dd > max_dd:
+            max_dd = dd
+
+    # Rendimiento total
+    rendimiento_pct = round((valores[-1] - capital_inicial) / capital_inicial * 100, 2)
+
+    return {
+        "sharpe": sharpe,
+        "max_drawdown_pct": round(max_dd * 100, 2),
+        "volatilidad_pct": vol_anual,
+        "rendimiento_pct": rendimiento_pct,
+        "n_snapshots": len(snapshots),
+    }
+
+
+@router.get("/metricas")
+def get_metricas(db: Session = Depends(get_db), grupo: Grupo = Depends(get_current_grupo)):
+    """Métricas de riesgo del grupo: Sharpe ratio, máximo drawdown, volatilidad."""
+    config = db.query(Configuracion).first()
+    capital_inicial = config.capital_inicial if config else 1_000_000.0
+
+    snapshots = (
+        db.query(HistorialCapital)
+        .filter(HistorialCapital.grupo_id == grupo.id)
+        .order_by(HistorialCapital.timestamp)
+        .all()
+    )
+    metricas = _calcular_metricas(snapshots, capital_inicial)
+    metricas["grupo"] = grupo.nombre
+    return metricas

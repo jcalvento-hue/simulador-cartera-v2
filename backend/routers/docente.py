@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from models import (
     Alumno, Grupo, Noticia, LecturaNoticia, Operacion,
-    Instrumento, Configuracion, get_db, Docente, PerfilGrupo
+    Instrumento, Configuracion, get_db, Docente, PerfilGrupo, HistorialCapital
 )
 from auth import get_current_docente
 from market import generar_historial_inicial
@@ -397,6 +397,62 @@ def reporte_bitacoras(
         }
         for o in ops
     ]
+
+
+@router.get("/reportes/metricas")
+def reporte_metricas(db: Session = Depends(get_db), _=Depends(get_current_docente)):
+    """Métricas de riesgo de todos los grupos: Sharpe, drawdown, volatilidad."""
+    import math
+    config = db.query(Configuracion).first()
+    capital_inicial = config.capital_inicial if config else 1_000_000.0
+
+    grupos = db.query(Grupo).all()
+    resultado = []
+    for g in grupos:
+        snapshots = (
+            db.query(HistorialCapital)
+            .filter(HistorialCapital.grupo_id == g.id)
+            .order_by(HistorialCapital.timestamp)
+            .all()
+        )
+        if len(snapshots) < 2:
+            resultado.append({
+                "grupo": g.nombre,
+                "sharpe": None,
+                "max_drawdown_pct": None,
+                "volatilidad_pct": None,
+                "rendimiento_pct": None,
+                "n_snapshots": len(snapshots),
+            })
+            continue
+
+        valores = [s.capital_total for s in snapshots]
+        retornos = [(valores[i] - valores[i-1]) / valores[i-1] for i in range(1, len(valores))]
+        n = len(retornos)
+        media = sum(retornos) / n
+        varianza = sum((r - media) ** 2 for r in retornos) / n
+        std = math.sqrt(varianza) if varianza > 0 else 0
+        sharpe = round(media / std, 3) if std > 0 else None
+        vol_anual = round(std * math.sqrt(252) * 100, 2) if std > 0 else 0.0
+
+        max_dd = 0.0
+        pico = valores[0]
+        for v in valores[1:]:
+            if v > pico:
+                pico = v
+            dd = (pico - v) / pico if pico > 0 else 0
+            if dd > max_dd:
+                max_dd = dd
+
+        resultado.append({
+            "grupo": g.nombre,
+            "sharpe": sharpe,
+            "max_drawdown_pct": round(max_dd * 100, 2),
+            "volatilidad_pct": vol_anual,
+            "rendimiento_pct": round((valores[-1] - capital_inicial) / capital_inicial * 100, 2),
+            "n_snapshots": len(snapshots),
+        })
+    return resultado
 
 
 @router.get("/reportes/ranking")

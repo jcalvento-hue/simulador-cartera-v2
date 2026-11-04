@@ -94,6 +94,16 @@ class HistorialPrecios(Base):
     instrumento = relationship("Instrumento", back_populates="precios")
 
 
+class HistorialCapital(Base):
+    """Snapshot del capital total de un grupo, registrado en cada operación."""
+    __tablename__ = "historial_capital"
+    id = Column(Integer, primary_key=True)
+    grupo_id = Column(Integer, ForeignKey("grupos.id"), nullable=False)
+    capital_total = Column(Float, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    grupo = relationship("Grupo", backref="historial_capital")
+
+
 class Posicion(Base):
     """Tenencia actual de un grupo en un instrumento."""
     __tablename__ = "posiciones"
