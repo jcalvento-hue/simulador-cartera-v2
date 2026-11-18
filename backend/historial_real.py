@@ -13,11 +13,8 @@ de la simulación.
 """
 
 import httpx
-import logging
 from datetime import date, datetime, timedelta
-from typing import List, Dict, Optional
-
-logger = logging.getLogger(__name__)
+from typing import List, Dict
 
 # ─── Configuración ────────────────────────────────────────────────────────────
 
@@ -59,7 +56,6 @@ _AMBITO_MAP: Dict[str, str] = {
 }
 
 # Mapeo ticker simulador → ID de fondo en CAFCI
-# IDs verificados: Fima Premium MM (conservador), Fima RF (moderado), Fima RV (agresivo)
 _CAFCI_MAP: Dict[str, int] = {
     "FCICONV": 1,    # Fima Premium Money Market (Galicia)
     "FCIMOD":  7,    # Fima Renta Fija (Galicia)
@@ -75,6 +71,8 @@ def _descargar_yfinance(ticker_yf: str) -> List[Dict]:
         import yfinance as yf
         fecha_fin = date.today()
         fecha_ini = fecha_fin - timedelta(days=365 * AÑOS_HISTORIAL)
+        print(f"[historial_real] yfinance descargando {ticker_yf} desde {fecha_ini} hasta {fecha_fin}", flush=True)
+
         df = yf.download(
             ticker_yf,
             start=fecha_ini.isoformat(),
@@ -82,20 +80,56 @@ def _descargar_yfinance(ticker_yf: str) -> List[Dict]:
             auto_adjust=True,
             progress=False,
         )
+
+        print(f"[historial_real] yfinance {ticker_yf}: shape={df.shape}, columns={list(df.columns)}", flush=True)
+
         if df.empty:
-            logger.warning(f"[historial_real] yfinance devolvió vacío para {ticker_yf}")
+            print(f"[historial_real] yfinance devolvió DataFrame vacío para {ticker_yf}", flush=True)
             return []
+
+        # Manejar MultiIndex de columnas (pandas >= 2.0 con yfinance)
+        # En versiones nuevas, df.columns puede ser MultiIndex: ("Close", "GGAL.BA")
+        close_col = None
+        if hasattr(df.columns, 'levels'):
+            # MultiIndex: buscar columna Close
+            for col in df.columns:
+                if isinstance(col, tuple) and col[0] == "Close":
+                    close_col = col
+                    break
+            if close_col is None:
+                # Intentar aplanar
+                df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+                close_col = "Close" if "Close" in df.columns else None
+        else:
+            close_col = "Close" if "Close" in df.columns else None
+
+        if close_col is None:
+            print(f"[historial_real] No se encontró columna Close para {ticker_yf}. Columnas: {list(df.columns)}", flush=True)
+            return []
+
         result = []
         for idx, row in df.iterrows():
             d = idx.date() if hasattr(idx, "date") else idx
-            close = row["Close"]
+            close = row[close_col]
+            # Extraer escalar de posible Series/array
+            if hasattr(close, 'iloc'):
+                close = close.iloc[0]
             if hasattr(close, "item"):
                 close = close.item()
+            try:
+                close = float(close)
+            except (TypeError, ValueError):
+                continue
             if close and close > 0:
-                result.append({"fecha": d, "precio": round(float(close), 2)})
+                result.append({"fecha": d, "precio": round(close, 2)})
+
+        print(f"[historial_real] yfinance {ticker_yf}: {len(result)} puntos procesados", flush=True)
         return sorted(result, key=lambda x: x["fecha"])
+
     except Exception as e:
-        logger.error(f"[historial_real] yfinance error para {ticker_yf}: {e}")
+        import traceback
+        print(f"[historial_real] yfinance ERROR para {ticker_yf}: {e}", flush=True)
+        print(traceback.format_exc(), flush=True)
         return []
 
 
@@ -105,7 +139,6 @@ def _descargar_ambito(ticker: str) -> List[Dict]:
     """
     Descarga historial de bonos desde Ambito Financiero.
     Endpoint: https://mercados.ambito.com/bonos/{TICKER}/historico-general/{DESDE}/{HASTA}
-    Responde JSON: {"fecha": "DD/MM/YYYY", "ultimo": "1234,56", ...}  (lista)
     """
     try:
         fecha_fin = date.today()
@@ -114,13 +147,13 @@ def _descargar_ambito(ticker: str) -> List[Dict]:
             f"https://mercados.ambito.com/bonos/{ticker}/historico-general/"
             f"{fecha_ini.strftime('%d-%m-%Y')}/{fecha_fin.strftime('%d-%m-%Y')}"
         )
+        print(f"[historial_real] Ambito GET {url}", flush=True)
         with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
             r = client.get(url, headers={"User-Agent": "SimuladorCartera/2.0"})
             r.raise_for_status()
             data = r.json()
 
         if not isinstance(data, list):
-            # Algunos endpoints devuelven {"data": [...]}
             data = data.get("data", []) if isinstance(data, dict) else []
 
         result = []
@@ -130,9 +163,7 @@ def _descargar_ambito(ticker: str) -> List[Dict]:
             if not fecha_str or not precio_str:
                 continue
             try:
-                # Ambito usa DD/MM/YYYY
                 d = datetime.strptime(fecha_str.strip(), "%d/%m/%Y").date()
-                # Precio puede ser "1.234,56" (separador de miles = punto, decimal = coma)
                 precio_limpio = precio_str.replace(".", "").replace(",", ".")
                 precio = float(precio_limpio)
                 if precio > 0:
@@ -140,9 +171,13 @@ def _descargar_ambito(ticker: str) -> List[Dict]:
             except (ValueError, AttributeError):
                 continue
 
+        print(f"[historial_real] Ambito {ticker}: {len(result)} puntos", flush=True)
         return sorted(result, key=lambda x: x["fecha"])
+
     except Exception as e:
-        logger.error(f"[historial_real] Ambito error para {ticker}: {e}")
+        import traceback
+        print(f"[historial_real] Ambito ERROR para {ticker}: {e}", flush=True)
+        print(traceback.format_exc(), flush=True)
         return []
 
 
@@ -151,8 +186,6 @@ def _descargar_ambito(ticker: str) -> List[Dict]:
 def _descargar_cafci(fondo_id: int) -> List[Dict]:
     """
     Descarga cuotapartes históricas de CAFCI.
-    Endpoint: https://api.cafci.org.ar/rendimiento?fondo_id={id}&limit=1000
-    Responde JSON lista: [{"fecha": "YYYY-MM-DD", "valor": "1234.5678"}, ...]
     """
     try:
         fecha_fin = date.today()
@@ -164,14 +197,15 @@ def _descargar_cafci(fondo_id: int) -> List[Dict]:
             f"&fechaHasta={fecha_fin.isoformat()}"
             f"&limit=2000"
         )
+        print(f"[historial_real] CAFCI GET {url}", flush=True)
         with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
             r = client.get(url, headers={"User-Agent": "SimuladorCartera/2.0"})
             r.raise_for_status()
             data = r.json()
 
-        # CAFCI puede devolver {"data": [...]} o directamente [...]
         rows = data.get("data", data) if isinstance(data, dict) else data
         if not isinstance(rows, list):
+            print(f"[historial_real] CAFCI fondo_id={fondo_id}: respuesta inesperada: {str(data)[:200]}", flush=True)
             return []
 
         result = []
@@ -188,9 +222,13 @@ def _descargar_cafci(fondo_id: int) -> List[Dict]:
             except (ValueError, AttributeError):
                 continue
 
+        print(f"[historial_real] CAFCI fondo_id={fondo_id}: {len(result)} puntos", flush=True)
         return sorted(result, key=lambda x: x["fecha"])
+
     except Exception as e:
-        logger.error(f"[historial_real] CAFCI error para fondo_id={fondo_id}: {e}")
+        import traceback
+        print(f"[historial_real] CAFCI ERROR para fondo_id={fondo_id}: {e}", flush=True)
+        print(traceback.format_exc(), flush=True)
         return []
 
 
@@ -200,32 +238,32 @@ def obtener_historial_real(ticker: str) -> List[Dict]:
     """
     Punto de entrada único. Devuelve historial de ~3 años para el ticker dado.
     Retorna [] si falla (el caller puede usar GBM como fallback).
-
-    Formato: [{"fecha": date, "precio": float}, ...] ordenado de viejo a nuevo.
     """
+    print(f"[historial_real] obtener_historial_real({ticker})", flush=True)
+
     if ticker in _YFINANCE_MAP:
         datos = _descargar_yfinance(_YFINANCE_MAP[ticker])
         if datos:
-            logger.info(f"[historial_real] {ticker}: {len(datos)} puntos vía yfinance")
+            print(f"[historial_real] {ticker}: OK yfinance, {len(datos)} puntos", flush=True)
             return datos
-        logger.warning(f"[historial_real] {ticker}: yfinance falló, se usará GBM")
+        print(f"[historial_real] {ticker}: yfinance vacío → GBM fallback", flush=True)
         return []
 
     if ticker in _AMBITO_MAP:
         datos = _descargar_ambito(_AMBITO_MAP[ticker])
         if datos:
-            logger.info(f"[historial_real] {ticker}: {len(datos)} puntos vía Ambito")
+            print(f"[historial_real] {ticker}: OK Ambito, {len(datos)} puntos", flush=True)
             return datos
-        logger.warning(f"[historial_real] {ticker}: Ambito falló, se usará GBM")
+        print(f"[historial_real] {ticker}: Ambito vacío → GBM fallback", flush=True)
         return []
 
     if ticker in _CAFCI_MAP:
         datos = _descargar_cafci(_CAFCI_MAP[ticker])
         if datos:
-            logger.info(f"[historial_real] {ticker}: {len(datos)} puntos vía CAFCI")
+            print(f"[historial_real] {ticker}: OK CAFCI, {len(datos)} puntos", flush=True)
             return datos
-        logger.warning(f"[historial_real] {ticker}: CAFCI falló, se usará GBM")
+        print(f"[historial_real] {ticker}: CAFCI vacío → GBM fallback", flush=True)
         return []
 
-    logger.warning(f"[historial_real] {ticker}: sin fuente conocida, se usará GBM")
+    print(f"[historial_real] {ticker}: sin fuente conocida → GBM fallback", flush=True)
     return []
