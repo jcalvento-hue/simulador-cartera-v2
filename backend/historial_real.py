@@ -1,37 +1,37 @@
 """
-Descarga del precio actual de cada instrumento usando Finnhub API.
-Plan gratuito: 60 req/min — suficiente para los 18 tickers con cotización.
+Descarga del precio actual de cada instrumento usando:
+- Twelve Data API para acciones argentinas (BCBA) — plan gratuito 800 req/día
+- Finnhub API para acciones NYSE/US — plan gratuito 60 req/min
 
-Tickers sin cotización en Finnhub (bonos AR, FCIs) → GBM fallback.
-
-Retorna dict: {ticker: precio_float} para los que tienen datos,
-o {} si falla todo.
+Tickers sin cotización (bonos AR, FCIs) → GBM fallback.
+Retorna dict: {ticker: precio_float}
 """
 
 import httpx
 from typing import Dict
 
-FINNHUB_API_KEY = "dbuu3hpr01qrflsmqu20dbuu3hpr01qrflsmqu2g"
+TWELVEDATA_API_KEY = "852f053f299440ba9ed639a6aa30514e"
+FINNHUB_API_KEY    = "dbuu3hpr01qrflsmqu20dbuu3hpr01qrflsmqu2g"
 TIMEOUT = 10
 
-# Mapeo ticker simulador → símbolo Finnhub
-# Acciones argentinas: exchange BCBA, formato "BCBA:GGAL"
-# CEDEARs/NYSE: símbolo directo
+# Acciones argentinas → Twelve Data (BCBA)
+_TWELVEDATA_MAP: Dict[str, str] = {
+    "GGAL":  "GGAL",
+    "YPF":   "YPFD",
+    "BMA":   "BMA",
+    "PAMP":  "PAMP",
+    "TXAR":  "TXAR",
+    "ALUA":  "ALUA",
+    "SUPV":  "SUPV",
+    "CEPU":  "CEPU",
+    "LOMA":  "LOMA",
+    "BBAR":  "BBAR",
+    "TECO2": "TECO2",
+    "CRES":  "CRES",
+}
+
+# Acciones NYSE → Finnhub
 _FINNHUB_MAP: Dict[str, str] = {
-    # Acciones Merval (BCBA)
-    "GGAL":  "BCBA:GGAL",
-    "YPF":   "BCBA:YPFD",
-    "BMA":   "BCBA:BMA",
-    "PAMP":  "BCBA:PAMP",
-    "TXAR":  "BCBA:TXAR",
-    "ALUA":  "BCBA:ALUA",
-    "SUPV":  "BCBA:SUPV",
-    "CEPU":  "BCBA:CEPU",
-    "LOMA":  "BCBA:LOMA",
-    "BBAR":  "BCBA:BBAR",
-    "TECO2": "BCBA:TECO2",
-    "CRES":  "BCBA:CRES",
-    # CEDEARs / NYSE
     "AAPL":  "AAPL",
     "GOOGL": "GOOGL",
     "AMZN":  "AMZN",
@@ -40,20 +40,38 @@ _FINNHUB_MAP: Dict[str, str] = {
     "BRKB":  "BRK.B",
 }
 
-# Sin cotización en Finnhub → GBM fallback
-_SIN_FUENTE = {"AL30", "GD30", "AL35", "AE38", "TX26", "T2X5",
-               "FCICONV", "FCIMOD", "FCIAGR"}
+
+def _quote_twelvedata(simbolo: str) -> float | None:
+    """Consulta precio actual en Twelve Data (exchange BCBA)."""
+    url = (
+        f"https://api.twelvedata.com/price"
+        f"?symbol={simbolo}&exchange=BCBA&apikey={TWELVEDATA_API_KEY}"
+    )
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            r = client.get(url)
+            r.raise_for_status()
+            data = r.json()
+        # Twelve Data retorna {"price": "1234.56"} o {"code": 400, "message": "..."}
+        if "price" in data:
+            precio = float(data["price"])
+            if precio > 0:
+                return round(precio, 2)
+        print(f"[historial_real] twelvedata respuesta inesperada {simbolo}: {data}", flush=True)
+        return None
+    except Exception as e:
+        print(f"[historial_real] twelvedata ERROR {simbolo}: {e}", flush=True)
+        return None
 
 
 def _quote_finnhub(simbolo: str) -> float | None:
-    """Consulta el precio actual de un símbolo en Finnhub. Retorna None si falla."""
+    """Consulta precio actual en Finnhub (NYSE/US)."""
     url = f"https://finnhub.io/api/v1/quote?symbol={simbolo}&token={FINNHUB_API_KEY}"
     try:
         with httpx.Client(timeout=TIMEOUT) as client:
             r = client.get(url)
             r.raise_for_status()
             data = r.json()
-        # Finnhub retorna: c=current, h=high, l=low, o=open, pc=prev close
         precio = data.get("c") or data.get("pc")
         if precio and precio > 0:
             return round(float(precio), 2)
@@ -65,11 +83,24 @@ def _quote_finnhub(simbolo: str) -> float | None:
 
 def obtener_precios_actuales() -> Dict[str, float]:
     """
-    Descarga el precio actual de todos los tickers con cotización en Finnhub.
-    Retorna {ticker: precio} para los que tienen datos.
-    Los tickers sin cotización (bonos, FCIs) no se incluyen → GBM fallback.
+    Descarga precios actuales para todos los tickers con cotización.
+    - Acciones AR (BCBA): Twelve Data
+    - Acciones US (NYSE): Finnhub
+    - Bonos y FCIs: no se incluyen → GBM fallback
+    Retorna {ticker: precio_float}
     """
     precios = {}
+
+    # Acciones argentinas — Twelve Data
+    for ticker, simbolo in _TWELVEDATA_MAP.items():
+        precio = _quote_twelvedata(simbolo)
+        if precio:
+            precios[ticker] = precio
+            print(f"[historial_real] {ticker} (BCBA:{simbolo}): {precio}", flush=True)
+        else:
+            print(f"[historial_real] {ticker} (BCBA:{simbolo}): sin precio → GBM fallback", flush=True)
+
+    # Acciones US — Finnhub
     for ticker, simbolo in _FINNHUB_MAP.items():
         precio = _quote_finnhub(simbolo)
         if precio:
@@ -77,11 +108,12 @@ def obtener_precios_actuales() -> Dict[str, float]:
             print(f"[historial_real] {ticker} ({simbolo}): {precio}", flush=True)
         else:
             print(f"[historial_real] {ticker} ({simbolo}): sin precio → GBM fallback", flush=True)
-    print(f"[historial_real] Total: {len(precios)}/{len(_FINNHUB_MAP)} precios obtenidos", flush=True)
+
+    total = len(_TWELVEDATA_MAP) + len(_FINNHUB_MAP)
+    print(f"[historial_real] Total: {len(precios)}/{total} precios obtenidos", flush=True)
     return precios
 
 
-# Mantener compatibilidad con código legacy que llama obtener_historial_real()
-# (ya no se usa desde market.py, pero por si acaso)
+# Compatibilidad con código legacy
 def obtener_historial_real(ticker: str):
     return []
