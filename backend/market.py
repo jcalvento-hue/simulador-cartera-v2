@@ -131,14 +131,44 @@ def _procesar_cauciones():
         db.close()
 
 
+def _gbm_retroactivo(precio_actual: float, pasos: int, sigma_por_paso: float,
+                      tipo: str, ticker: str, precio_inicial: float) -> list:
+    """
+    Genera una lista de precios GBM retroactivos (de más viejo a más nuevo).
+    El último elemento es precio_actual.
+    sigma_por_paso: volatilidad normalizada al intervalo del paso.
+    """
+    precio = precio_actual
+    precios = [precio]
+    for _ in range(pasos - 1):
+        if tipo == "fci":
+            tna = _FCI_TNA.get(ticker, 0.40)
+            # Para FCI retroactivo usamos el intervalo normalizado dado
+            factor = math.exp(-tna * sigma_por_paso / _SEG_ANUALES)
+            precio = round(precio * factor, 4)
+        else:
+            if sigma_por_paso == 0:
+                precios.insert(0, precio)
+                continue
+            epsilon = random.gauss(0, 1)
+            factor = math.exp(-0.5 * sigma_por_paso**2 + sigma_por_paso * epsilon)
+            precio = round(precio * factor, 2)
+            precio = max(precio, precio_inicial * 0.20)
+        precios.insert(0, precio)
+    return precios
+
+
 def generar_historial_inicial(db: Session = None, horas: float = 2.0):
     """
-    Regenera el historial GBM de sesión para todos los instrumentos activos.
+    Regenera el historial GBM completo para todos los instrumentos activos.
 
-    Los precios reales ya fueron seteados previamente por set-precios (desde el browser).
-    Esta función genera únicamente los puntos de alta frecuencia (cada 30s) para las
-    últimas `horas` horas, arrancando desde precio_actual de cada instrumento.
+    Genera tres capas de puntos históricos simulados:
+    - Sesión (últimas 2h): punto cada 30s — para gráfico intradiario
+    - Semana (últimos 7d): punto cada 15min — para vista 1S
+    - Mes   (últimos 30d): punto cada 1h  — para vista 1M
+    - Año   (últimos 365d): punto por día — para vista 1A
 
+    Los precios reales ya fueron seteados previamente por set-precios.
     No intenta descargar precios de internet (Render bloquea outbound HTTP).
     """
     global _regenerando
@@ -150,7 +180,18 @@ def generar_historial_inicial(db: Session = None, horas: float = 2.0):
     try:
         instrumentos = db.query(Instrumento).filter(Instrumento.activo == True).all()
         ahora = datetime.utcnow()
-        pasos_sesion = int(horas * 3600 / _INTERVALO_SEG)   # puntos de alta frecuencia (ej. 240)
+
+        # ── Configuración de capas históricas ─────────────────────────────────
+        # (intervalo_seg, dias_atras, sigma_escala)
+        # sigma_escala = sqrt(intervalo / seg_por_dia) normaliza la vol diaria al intervalo
+        SEG_DIA = 86400
+        capas = [
+            # (nombre,  intervalo_seg, dias,  sigma_escala)
+            ("sesion",  _INTERVALO_SEG,    horas / 24,  math.sqrt(_INTERVALO_SEG / SEG_DIA)),
+            ("semana",  15 * 60,           7,           math.sqrt(15 * 60 / SEG_DIA)),
+            ("mes",     3600,              30,          math.sqrt(3600 / SEG_DIA)),
+            ("anio",    SEG_DIA,           365,         1.0),   # vol diaria directa
+        ]
 
         for inst in instrumentos:
             # Borrar historial previo
@@ -158,37 +199,38 @@ def generar_historial_inicial(db: Session = None, horas: float = 2.0):
                 HistorialPrecios.instrumento_id == inst.id
             ).delete()
 
-            # Sincronizar precio_sesion con precio_actual (ya seteado con valor real si llegó)
+            # Sincronizar precio_sesion con precio_actual
             inst.precio_sesion = inst.precio_actual
 
-            # Generar GBM retroactivo desde precio_actual hacia atrás
-            precio = inst.precio_actual
-            precios = [precio]
-            for _ in range(pasos_sesion - 1):
-                if inst.tipo == "fci":
-                    tna = _FCI_TNA.get(inst.ticker, 0.40)
-                    factor = math.exp(-tna * _INTERVALO_SEG / _SEG_ANUALES)
-                    precio = round(precio * factor, 4)
-                else:
-                    sigma = inst.volatilidad
-                    if sigma == 0:
-                        precios.insert(0, precio)
-                        continue
-                    epsilon = random.gauss(0, 1)
-                    factor = math.exp(-0.5 * sigma**2 + sigma * epsilon)
-                    precio = round(precio * factor, 2)
-                    precio = max(precio, inst.precio_inicial * 0.20)
-                precios.insert(0, precio)
+            total_puntos = 0
+            precio_capa = inst.precio_actual   # cada capa arranca desde el precio_actual
 
-            for i, p in enumerate(precios):
-                ts = ahora - timedelta(seconds=_INTERVALO_SEG * (len(precios) - 1 - i))
-                db.add(HistorialPrecios(
-                    instrumento_id=inst.id,
-                    precio=p,
-                    timestamp=ts,
-                ))
+            for nombre, intervalo, dias, sigma_esc in capas:
+                pasos = max(2, int(dias * SEG_DIA / intervalo))
+                sigma_paso = inst.volatilidad * sigma_esc if inst.tipo != "fci" else intervalo
 
-            print(f"[market] {inst.ticker}: precio_actual={inst.precio_actual:.2f}, {len(precios)} puntos GBM", flush=True)
+                precios_capa = _gbm_retroactivo(
+                    precio_actual=precio_capa,
+                    pasos=pasos,
+                    sigma_por_paso=sigma_paso,
+                    tipo=inst.tipo,
+                    ticker=inst.ticker,
+                    precio_inicial=inst.precio_inicial,
+                )
+
+                for i, p in enumerate(precios_capa):
+                    ts = ahora - timedelta(seconds=intervalo * (len(precios_capa) - 1 - i))
+                    db.add(HistorialPrecios(
+                        instrumento_id=inst.id,
+                        precio=p,
+                        timestamp=ts,
+                    ))
+
+                total_puntos += len(precios_capa)
+                # La próxima capa más vieja arranca desde el precio más viejo de esta capa
+                precio_capa = precios_capa[0]
+
+            print(f"[market] {inst.ticker}: precio_actual={inst.precio_actual:.2f}, {total_puntos} puntos GBM (sesion+semana+mes+anio)", flush=True)
 
         db.commit()
         print(f"[market] Historial regenerado para {len(instrumentos)} instrumentos", flush=True)

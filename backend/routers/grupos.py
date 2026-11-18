@@ -121,7 +121,7 @@ def get_mercado(db: Session = Depends(get_db), _=Depends(get_current_grupo)):
 @router.get("/mercado/{ticker}/historial")
 def get_historial(
     ticker: str,
-    periodo: str = "sesion",   # "sesion" | "1m" | "6m" | "1y" | "3y"
+    periodo: str = "sesion",   # "sesion" | "1s" | "1m" | "1a"
     db: Session = Depends(get_db),
     _=Depends(get_current_grupo),
 ):
@@ -129,11 +129,10 @@ def get_historial(
     Devuelve el historial de precios de un instrumento.
 
     periodo:
-      - "sesion" → últimas 2 horas, alta frecuencia (30 seg) — para el gráfico de sesión
-      - "1m"     → último mes, puntos diarios
-      - "6m"     → últimos 6 meses, puntos diarios
-      - "1y"     → último año, puntos diarios
-      - "3y"     → últimos 3 años, puntos diarios (todo el historial real)
+      - "sesion" → últimas 2 horas, puntos cada 30s (alta frecuencia)
+      - "1s"     → última semana, puntos cada 15 min
+      - "1m"     → último mes, puntos cada 1h
+      - "1a"     → último año, puntos diarios
     """
     inst = db.query(Instrumento).filter(Instrumento.ticker == ticker.upper()).first()
     if not inst:
@@ -144,41 +143,39 @@ def get_historial(
 
     ahora = datetime.utcnow()
 
-    if periodo == "sesion":
-        # Puntos de los últimas 2 horas (alta frecuencia)
-        desde = ahora - timedelta(hours=2)
-        precios = (
-            db.query(HistorialPrecios)
-            .filter(
-                HistorialPrecios.instrumento_id == inst.id,
-                HistorialPrecios.timestamp >= desde,
-            )
-            .order_by(HistorialPrecios.timestamp.asc())
-            .all()
+    # Configuración por período: (ventana en horas, intervalo mínimo en segundos para decimar)
+    cfg = {
+        "sesion": (2,       30),      # 2h,  punto cada 30s
+        "1s":     (7*24,    15*60),   # 7d,  punto cada 15min
+        "1m":     (30*24,   3600),    # 30d, punto cada 1h
+        "1a":     (365*24,  86400),   # 1y,  punto cada 1 día
+    }
+    ventana_h, intervalo_min_seg = cfg.get(periodo, cfg["sesion"])
+    desde = ahora - timedelta(hours=ventana_h)
+
+    todos = (
+        db.query(HistorialPrecios)
+        .filter(
+            HistorialPrecios.instrumento_id == inst.id,
+            HistorialPrecios.timestamp >= desde,
         )
-    else:
-        dias = {"1m": 30, "6m": 180, "1y": 365, "3y": 1095}.get(periodo, 1095)
-        desde = ahora - timedelta(days=dias)
-        # Para períodos largos: un punto por día (el último de cada día)
-        # Filtramos puntos con timestamp a mediodía (los reales son a las 12:00:00 UTC)
-        # y excluimos los de alta frecuencia (segundos != 0)
-        precios = (
-            db.query(HistorialPrecios)
-            .filter(
-                HistorialPrecios.instrumento_id == inst.id,
-                HistorialPrecios.timestamp >= desde,
-                # Solo puntos diarios: minuto y segundo = 0 (12:00:00 exacto)
-                # o bien tomamos todos y los decimamos en Python si hay muchos
-            )
-            .order_by(HistorialPrecios.timestamp.asc())
-            .all()
-        )
-        # Decimar: quedarse con el último punto de cada día calendario
-        por_dia: dict = {}
-        for p in precios:
-            dia = p.timestamp.date()
-            por_dia[dia] = p   # sobrescribe → queda el último del día
-        precios = sorted(por_dia.values(), key=lambda x: x.timestamp)
+        .order_by(HistorialPrecios.timestamp.asc())
+        .all()
+    )
+
+    # Decimar: un punto por "bucket" de intervalo_min_seg segundos
+    # → tomar el último punto de cada bucket
+    if not todos:
+        return {"ticker": inst.ticker, "periodo": periodo, "precios": []}
+
+    buckets: dict = {}
+    epoch = datetime(1970, 1, 1)
+    for p in todos:
+        seg = int((p.timestamp - epoch).total_seconds())
+        bucket_id = seg // intervalo_min_seg
+        buckets[bucket_id] = p   # sobrescribe → queda el último del bucket
+
+    precios = sorted(buckets.values(), key=lambda x: x.timestamp)
 
     return {
         "ticker": inst.ticker,
