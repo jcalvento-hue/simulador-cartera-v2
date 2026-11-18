@@ -1656,10 +1656,10 @@ function PanelDocente({ token }) {
 
   async function regenerarHistorial() {
     setSavingConfig(true);
-    flash("info", "⏳ Descargando precios reales desde Finnhub...");
+    flash("info", "⏳ Descargando precios reales (Rava + Finnhub)...");
     try {
-      // El backend llama directamente a Finnhub (sin restricciones CORS)
-      // y luego genera el historial GBM desde esos precios.
+      // El backend descarga precios de Rava (AR) y Finnhub (US), sin CORS.
+      // Luego genera el historial GBM desde esos precios.
       const res = await api("POST", "/api/docente/configuracion/regenerar-historial", null, token);
       flash("success", `✅ ${res.mensaje || "Historial regenerado correctamente."}`);
     } catch (e) { flash("error", e.message); }

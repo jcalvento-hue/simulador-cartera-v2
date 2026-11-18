@@ -702,14 +702,14 @@ def set_precios_semilla(
 def regenerar_historial(db: Session = Depends(get_db), _=Depends(get_current_docente)):
     """
     Regenera el historial de precios para todos los instrumentos activos (últimas 2 horas).
-    1. Descarga precios actuales desde Finnhub (backend → Finnhub, sin CORS).
+    1. Descarga precios actuales: Rava (acciones AR) + Finnhub (acciones US).
     2. Actualiza precio_actual / precio_inicial en la DB con los precios reales.
     3. Genera el GBM retroactivo desde esos precios.
-    Los instrumentos sin precio en Finnhub (bonos, FCIs) conservan su precio actual.
+    Los instrumentos sin precio (bonos, FCIs) conservan su precio actual.
     """
     from historial_real import obtener_precios_actuales
 
-    print("[regenerar] Descargando precios actuales desde Finnhub...", flush=True)
+    print("[regenerar] Descargando precios actuales (Rava + Finnhub)...", flush=True)
     precios = obtener_precios_actuales()
 
     actualizados = 0
@@ -729,7 +729,7 @@ def regenerar_historial(db: Session = Depends(get_db), _=Depends(get_current_doc
     print("[regenerar] Generando historial GBM...", flush=True)
     generar_historial_inicial(db=db, horas=2.0)
     print("[regenerar] Regeneración completada.", flush=True)
-    return {"ok": True, "mensaje": f"Historial regenerado. {actualizados} precios actualizados desde Finnhub."}
+    return {"ok": True, "mensaje": f"Historial regenerado. {actualizados} precios actualizados desde Rava/Finnhub."}
 
 
 @router.get("/configuracion/test-historial")
