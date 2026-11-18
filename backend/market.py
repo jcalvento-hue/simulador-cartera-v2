@@ -7,13 +7,19 @@ Lógica por tipo de instrumento:
 - accion / bono / cedear : Geometric Brownian Motion (random walk)
 - fci                    : drift puro según TNA configurada (sin volatilidad)
 - cauciones              : procesadas al vencer (capital + intereses → capital_disponible)
+
+Al regenerar historial:
+- Descarga datos reales de los últimos 3 años (yfinance / Ambito / CAFCI)
+- El último precio real se convierte en precio_inicial de la simulación
+- Si falla la descarga, usa GBM como fallback
 """
 import asyncio
 import random
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from models import Instrumento, HistorialPrecios, Caucion, Configuracion, Grupo, SessionLocal
+from historial_real import obtener_historial_real
 
 # TNA por tipo de FCI (anual) — base que se usa si no hay config
 _FCI_TNA = {
@@ -121,9 +127,17 @@ def _procesar_cauciones():
 
 def generar_historial_inicial(db: Session = None, horas: float = 2.0):
     """
-    Genera historial retroactivo para todos los instrumentos activos,
-    simulando las últimas `horas` horas con puntos cada 30 segundos.
-    Borra el historial existente antes de regenerar (útil al reiniciar simulador).
+    Regenera el historial de precios para todos los instrumentos activos.
+
+    Estrategia:
+      1. Intenta descargar historial real (3 años) desde yfinance / Ambito / CAFCI.
+      2. Si obtiene datos reales:
+         - Guarda un punto diario por cada día del historial real.
+         - Actualiza precio_inicial y precio_actual con el último precio real.
+         - Genera además las últimas `horas` horas de GBM partiendo de ese precio
+           real, para que el gráfico de sesión tenga resolución de 30 segundos.
+      3. Si la descarga falla: fallback a GBM retroactivo puro (comportamiento anterior).
+
     Se puede llamar con db externo (desde un router) o abre su propia sesión.
     """
     close_db = False
@@ -133,51 +147,103 @@ def generar_historial_inicial(db: Session = None, horas: float = 2.0):
     try:
         instrumentos = db.query(Instrumento).filter(Instrumento.activo == True).all()
         ahora = datetime.utcnow()
-        pasos = int(horas * 3600 / _INTERVALO_SEG)   # ej: 2h → 240 pasos
+        pasos_sesion = int(horas * 3600 / _INTERVALO_SEG)   # puntos de alta frecuencia (ej. 240)
 
         for inst in instrumentos:
-            # Guardar precio de inicio de sesión (para variación = 0 al arrancar)
-            inst.precio_sesion = inst.precio_actual
-
-            # Borrar historial previo de este instrumento
+            # ── Borrar historial previo ──────────────────────────────────────
             db.query(HistorialPrecios).filter(
                 HistorialPrecios.instrumento_id == inst.id
             ).delete()
 
-            # Simular historial retroactivo: partimos del precio actual y
-            # aplicamos GBM/drift hacia ATRÁS (invertido), para que el último
-            # punto sea el precio actual y la variación de sesión arranque en 0.
-            precios = [inst.precio_actual]
-            precio = inst.precio_actual
+            # ── Intentar historial real ──────────────────────────────────────
+            historial_real = obtener_historial_real(inst.ticker)
 
-            for _ in range(pasos - 1):
-                if inst.tipo == "fci":
-                    tna = _FCI_TNA.get(inst.ticker, 0.40)
-                    # Invertir drift hacia atrás
-                    factor = math.exp(-tna * _INTERVALO_SEG / _SEG_ANUALES)
-                    precio = round(precio * factor, 4)
-                else:
-                    sigma = inst.volatilidad
-                    if sigma == 0:
-                        precios.insert(0, precio)
-                        continue
-                    epsilon = random.gauss(0, 1)
-                    factor = math.exp(-0.5 * sigma**2 + sigma * epsilon)
-                    precio = round(precio * factor, 2)
-                    precio = max(precio, inst.precio_inicial * 0.20)
-                precios.insert(0, precio)
+            if historial_real:
+                # Actualizar precio con el último dato real
+                ultimo_precio = historial_real[-1]["precio"]
+                inst.precio_inicial = ultimo_precio
+                inst.precio_actual  = ultimo_precio
+                inst.precio_sesion  = ultimo_precio
 
-            # Insertar puntos con timestamps retroactivos (el último = ahora)
-            for i, p in enumerate(precios):
-                ts = ahora - timedelta(seconds=_INTERVALO_SEG * (len(precios) - 1 - i))
-                db.add(HistorialPrecios(
-                    instrumento_id=inst.id,
-                    precio=p,
-                    timestamp=ts,
-                ))
+                # Insertar un punto diario por cada entrada histórica real
+                for punto in historial_real:
+                    # Convertir date → datetime (mediodía UTC como convención)
+                    d = punto["fecha"]
+                    if isinstance(d, date) and not isinstance(d, datetime):
+                        ts = datetime(d.year, d.month, d.day, 12, 0, 0)
+                    else:
+                        ts = d
+                    db.add(HistorialPrecios(
+                        instrumento_id=inst.id,
+                        precio=punto["precio"],
+                        timestamp=ts,
+                    ))
+
+                # Generar puntos de alta frecuencia para la sesión actual (últimas `horas` hs)
+                # Partimos del último precio real y aplicamos GBM hacia adelante en el pasado
+                precio = ultimo_precio
+                precios_sesion = [precio]
+                for _ in range(pasos_sesion - 1):
+                    if inst.tipo == "fci":
+                        tna = _FCI_TNA.get(inst.ticker, 0.40)
+                        factor = math.exp(-tna * _INTERVALO_SEG / _SEG_ANUALES)
+                        precio = round(precio * factor, 4)
+                    else:
+                        sigma = inst.volatilidad
+                        if sigma == 0:
+                            precios_sesion.insert(0, precio)
+                            continue
+                        epsilon = random.gauss(0, 1)
+                        factor = math.exp(-0.5 * sigma**2 + sigma * epsilon)
+                        precio = round(precio * factor, 2)
+                        precio = max(precio, inst.precio_inicial * 0.20)
+                    precios_sesion.insert(0, precio)
+
+                # Los puntos de sesión van en las últimas `horas` horas (alta frecuencia)
+                for i, p in enumerate(precios_sesion):
+                    ts = ahora - timedelta(seconds=_INTERVALO_SEG * (len(precios_sesion) - 1 - i))
+                    db.add(HistorialPrecios(
+                        instrumento_id=inst.id,
+                        precio=p,
+                        timestamp=ts,
+                    ))
+
+                print(f"[market] {inst.ticker}: {len(historial_real)} puntos reales + {len(precios_sesion)} de sesión")
+
+            else:
+                # ── Fallback: GBM retroactivo puro (comportamiento anterior) ─
+                inst.precio_sesion = inst.precio_actual
+                precios = [inst.precio_actual]
+                precio = inst.precio_actual
+
+                for _ in range(pasos_sesion - 1):
+                    if inst.tipo == "fci":
+                        tna = _FCI_TNA.get(inst.ticker, 0.40)
+                        factor = math.exp(-tna * _INTERVALO_SEG / _SEG_ANUALES)
+                        precio = round(precio * factor, 4)
+                    else:
+                        sigma = inst.volatilidad
+                        if sigma == 0:
+                            precios.insert(0, precio)
+                            continue
+                        epsilon = random.gauss(0, 1)
+                        factor = math.exp(-0.5 * sigma**2 + sigma * epsilon)
+                        precio = round(precio * factor, 2)
+                        precio = max(precio, inst.precio_inicial * 0.20)
+                    precios.insert(0, precio)
+
+                for i, p in enumerate(precios):
+                    ts = ahora - timedelta(seconds=_INTERVALO_SEG * (len(precios) - 1 - i))
+                    db.add(HistorialPrecios(
+                        instrumento_id=inst.id,
+                        precio=p,
+                        timestamp=ts,
+                    ))
+
+                print(f"[market] {inst.ticker}: GBM fallback ({len(precios)} puntos)")
 
         db.commit()
-        print(f"[market] Historial inicial generado: {pasos} puntos × {len(instrumentos)} instrumentos")
+        print(f"[market] Historial regenerado para {len(instrumentos)} instrumentos")
     except Exception as e:
         db.rollback()
         print(f"[market] Error generando historial inicial: {e}")

@@ -119,21 +119,71 @@ def get_mercado(db: Session = Depends(get_db), _=Depends(get_current_grupo)):
 
 
 @router.get("/mercado/{ticker}/historial")
-def get_historial(ticker: str, db: Session = Depends(get_db), _=Depends(get_current_grupo)):
+def get_historial(
+    ticker: str,
+    periodo: str = "sesion",   # "sesion" | "1m" | "6m" | "1y" | "3y"
+    db: Session = Depends(get_db),
+    _=Depends(get_current_grupo),
+):
+    """
+    Devuelve el historial de precios de un instrumento.
+
+    periodo:
+      - "sesion" → últimas 2 horas, alta frecuencia (30 seg) — para el gráfico de sesión
+      - "1m"     → último mes, puntos diarios
+      - "6m"     → últimos 6 meses, puntos diarios
+      - "1y"     → último año, puntos diarios
+      - "3y"     → últimos 3 años, puntos diarios (todo el historial real)
+    """
     inst = db.query(Instrumento).filter(Instrumento.ticker == ticker.upper()).first()
     if not inst:
         raise HTTPException(status_code=404, detail="Instrumento no encontrado")
+
     from models import HistorialPrecios
-    precios = (
-        db.query(HistorialPrecios)
-        .filter(HistorialPrecios.instrumento_id == inst.id)
-        .order_by(HistorialPrecios.timestamp.asc())
-        .limit(200)
-        .all()
-    )
+    from datetime import datetime, timedelta
+
+    ahora = datetime.utcnow()
+
+    if periodo == "sesion":
+        # Puntos de los últimas 2 horas (alta frecuencia)
+        desde = ahora - timedelta(hours=2)
+        precios = (
+            db.query(HistorialPrecios)
+            .filter(
+                HistorialPrecios.instrumento_id == inst.id,
+                HistorialPrecios.timestamp >= desde,
+            )
+            .order_by(HistorialPrecios.timestamp.asc())
+            .all()
+        )
+    else:
+        dias = {"1m": 30, "6m": 180, "1y": 365, "3y": 1095}.get(periodo, 1095)
+        desde = ahora - timedelta(days=dias)
+        # Para períodos largos: un punto por día (el último de cada día)
+        # Filtramos puntos con timestamp a mediodía (los reales son a las 12:00:00 UTC)
+        # y excluimos los de alta frecuencia (segundos != 0)
+        precios = (
+            db.query(HistorialPrecios)
+            .filter(
+                HistorialPrecios.instrumento_id == inst.id,
+                HistorialPrecios.timestamp >= desde,
+                # Solo puntos diarios: minuto y segundo = 0 (12:00:00 exacto)
+                # o bien tomamos todos y los decimamos en Python si hay muchos
+            )
+            .order_by(HistorialPrecios.timestamp.asc())
+            .all()
+        )
+        # Decimar: quedarse con el último punto de cada día calendario
+        por_dia: dict = {}
+        for p in precios:
+            dia = p.timestamp.date()
+            por_dia[dia] = p   # sobrescribe → queda el último del día
+        precios = sorted(por_dia.values(), key=lambda x: x.timestamp)
+
     return {
         "ticker": inst.ticker,
-        "precios": [{"t": p.timestamp.isoformat(), "p": p.precio} for p in precios]
+        "periodo": periodo,
+        "precios": [{"t": p.timestamp.isoformat(), "p": p.precio} for p in precios],
     }
 
 
