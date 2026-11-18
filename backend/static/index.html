@@ -1654,11 +1654,84 @@ function PanelDocente({ token }) {
     finally { setSavingConfig(false); }
   }
 
+  // Mapeo ticker simulador → símbolo Yahoo Finance
+  // Acciones argentinas: sufijo ".BA"; CEDEARs/NYSE: sin sufijo
+  // Bonos y FCIs no tienen cotización en Yahoo → se omiten (GBM fallback)
+  const YAHOO_MAP = {
+    "GGAL":  "GGAL.BA",
+    "YPF":   "YPF.BA",
+    "BMA":   "BMA.BA",
+    "PAMP":  "PAMP.BA",
+    "TXAR":  "TXAR.BA",
+    "ALUA":  "ALUA.BA",
+    "SUPV":  "SUPV.BA",
+    "CEPU":  "CEPU.BA",
+    "LOMA":  "LOMA.BA",
+    "BBAR":  "BBAR.BA",
+    "TECO2": "TECO2.BA",
+    "CRES":  "CRES.BA",
+    "AAPL":  "AAPL",
+    "GOOGL": "GOOGL",
+    "AMZN":  "AMZN",
+    "MSFT":  "MSFT",
+    "TSLA":  "TSLA",
+    "BRKB":  "BRK-B",
+  };
+
+  async function fetchPrecioYahoo(tickerYahoo) {
+    // Yahoo Finance v8 — CORS libre desde el browser
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${tickerYahoo}?interval=1d&range=1d`;
+    const r = await fetch(url, { headers: { "Accept": "application/json" } });
+    if (!r.ok) throw new Error(`Yahoo ${tickerYahoo}: HTTP ${r.status}`);
+    const data = await r.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) throw new Error(`Yahoo ${tickerYahoo}: sin datos`);
+    // Usamos el último cierre disponible (meta.regularMarketPrice o close[-1])
+    const precio = result.meta?.regularMarketPrice
+      || result.indicators?.quote?.[0]?.close?.slice(-1)?.[0];
+    if (!precio || precio <= 0) throw new Error(`Yahoo ${tickerYahoo}: precio inválido`);
+    return precio;
+  }
+
   async function regenerarHistorial() {
     setSavingConfig(true);
+    flash("info", "⏳ Descargando precios reales desde Yahoo Finance...");
     try {
+      // 1. Descargar precios reales desde el browser (sin restricciones de red)
+      const precios = {};
+      const errores = [];
+      const tickers = Object.keys(YAHOO_MAP);
+      await Promise.allSettled(
+        tickers.map(async (ticker) => {
+          try {
+            const precio = await fetchPrecioYahoo(YAHOO_MAP[ticker]);
+            precios[ticker] = precio;
+          } catch (e) {
+            errores.push(`${ticker}: ${e.message}`);
+          }
+        })
+      );
+
+      const obtenidos = Object.keys(precios).length;
+      if (obtenidos === 0) {
+        // Sin ningún precio real: regenerar igual con GBM fallback
+        console.warn("[regenerar] No se pudieron obtener precios de Yahoo:", errores);
+        flash("info", "⏳ Sin precios reales disponibles, regenerando con GBM...");
+      } else {
+        // 2. Enviar precios al backend
+        console.log(`[regenerar] ${obtenidos} precios obtenidos de Yahoo:`, precios);
+        if (errores.length > 0) console.warn("[regenerar] Errores parciales:", errores);
+        await api("POST", "/api/docente/configuracion/set-precios", { precios }, token);
+        flash("info", `⏳ ${obtenidos} precios actualizados. Regenerando historial...`);
+      }
+
+      // 3. Regenerar historial (usa los precios recién seteados como base del GBM)
       await api("POST", "/api/docente/configuracion/regenerar-historial", null, token);
-      flash("success", "✅ Historial regenerado. Las variaciones de sesión se reiniciaron.");
+
+      const msg = obtenidos > 0
+        ? `✅ Historial regenerado con ${obtenidos} precios reales (${errores.length} sin datos usan GBM).`
+        : "✅ Historial regenerado con GBM (no se pudieron obtener precios de Yahoo).";
+      flash("success", msg);
     } catch (e) { flash("error", e.message); }
     finally { setSavingConfig(false); }
   }

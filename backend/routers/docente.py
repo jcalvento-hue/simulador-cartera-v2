@@ -663,12 +663,44 @@ def asignar_perfil_grupo(
     return {"ok": True, "grupo": grupo.nombre, "estilo": p.estilo}
 
 
+class SetPreciosIn(BaseModel):
+    precios: dict  # {ticker: precio_float}
+
+
+@router.post("/configuracion/set-precios")
+def set_precios_semilla(
+    body: SetPreciosIn,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_docente)
+):
+    """
+    Recibe precios reales descargados desde el browser (CORS libre) y los guarda
+    como precio_inicial / precio_actual antes de regenerar el historial.
+    El frontend descarga los precios y los envía aquí; luego llama a regenerar-historial.
+    """
+    actualizados = 0
+    for ticker, precio in body.precios.items():
+        try:
+            precio_f = float(precio)
+            if precio_f <= 0:
+                continue
+            inst = db.query(Instrumento).filter(Instrumento.ticker == ticker).first()
+            if inst:
+                inst.precio_inicial = precio_f
+                inst.precio_actual  = precio_f
+                inst.precio_sesion  = precio_f
+                actualizados += 1
+                print(f"[set-precios] {ticker} → {precio_f}", flush=True)
+        except (ValueError, TypeError):
+            continue
+    db.commit()
+    print(f"[set-precios] {actualizados} instrumentos actualizados.", flush=True)
+    return {"ok": True, "actualizados": actualizados}
+
+
 @router.post("/configuracion/regenerar-historial")
 def regenerar_historial(db: Session = Depends(get_db), _=Depends(get_current_docente)):
     """Regenera el historial de precios para todos los instrumentos activos (últimas 2 horas)."""
-    import logging
-    logger = logging.getLogger("market")
-    logger.setLevel(logging.DEBUG)
     print("[regenerar] Iniciando regeneración de historial...", flush=True)
     generar_historial_inicial(db=db, horas=2.0)
     print("[regenerar] Regeneración completada.", flush=True)
