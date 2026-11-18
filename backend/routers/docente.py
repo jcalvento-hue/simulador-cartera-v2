@@ -700,11 +700,36 @@ def set_precios_semilla(
 
 @router.post("/configuracion/regenerar-historial")
 def regenerar_historial(db: Session = Depends(get_db), _=Depends(get_current_docente)):
-    """Regenera el historial de precios para todos los instrumentos activos (últimas 2 horas)."""
-    print("[regenerar] Iniciando regeneración de historial...", flush=True)
+    """
+    Regenera el historial de precios para todos los instrumentos activos (últimas 2 horas).
+    1. Descarga precios actuales desde Finnhub (backend → Finnhub, sin CORS).
+    2. Actualiza precio_actual / precio_inicial en la DB con los precios reales.
+    3. Genera el GBM retroactivo desde esos precios.
+    Los instrumentos sin precio en Finnhub (bonos, FCIs) conservan su precio actual.
+    """
+    from historial_real import obtener_precios_actuales
+
+    print("[regenerar] Descargando precios actuales desde Finnhub...", flush=True)
+    precios = obtener_precios_actuales()
+
+    actualizados = 0
+    for ticker, precio in precios.items():
+        try:
+            inst = db.query(Instrumento).filter(Instrumento.ticker == ticker).first()
+            if inst and precio > 0:
+                inst.precio_inicial = precio
+                inst.precio_actual  = precio
+                inst.precio_sesion  = precio
+                actualizados += 1
+        except Exception as e:
+            print(f"[regenerar] Error actualizando {ticker}: {e}", flush=True)
+    db.commit()
+    print(f"[regenerar] {actualizados} instrumentos actualizados con precios reales.", flush=True)
+
+    print("[regenerar] Generando historial GBM...", flush=True)
     generar_historial_inicial(db=db, horas=2.0)
     print("[regenerar] Regeneración completada.", flush=True)
-    return {"ok": True, "mensaje": "Historial regenerado correctamente."}
+    return {"ok": True, "mensaje": f"Historial regenerado. {actualizados} precios actualizados desde Finnhub."}
 
 
 @router.get("/configuracion/test-historial")
