@@ -143,14 +143,8 @@ def get_historial(
 
     ahora = datetime.utcnow()
 
-    # Configuración por período: (ventana en horas, intervalo mínimo en segundos para decimar)
-    cfg = {
-        "sesion": (2,       30),      # 2h,  punto cada 30s
-        "1s":     (7*24,    15*60),   # 7d,  punto cada 15min
-        "1m":     (30*24,   3600),    # 30d, punto cada 1h
-        "1a":     (365*24,  86400),   # 1y,  punto cada 1 día
-    }
-    ventana_h, intervalo_min_seg = cfg.get(periodo, cfg["sesion"])
+    # Ventana temporal por período
+    ventana_h = {"sesion": 2, "1s": 7*24, "1m": 30*24, "1a": 365*24}.get(periodo, 2)
     desde = ahora - timedelta(hours=ventana_h)
 
     todos = (
@@ -163,19 +157,19 @@ def get_historial(
         .all()
     )
 
-    # Decimar: un punto por "bucket" de intervalo_min_seg segundos
-    # → tomar el último punto de cada bucket
     if not todos:
         return {"ticker": inst.ticker, "periodo": periodo, "precios": []}
 
-    buckets: dict = {}
-    epoch = datetime(1970, 1, 1)
-    for p in todos:
-        seg = int((p.timestamp - epoch).total_seconds())
-        bucket_id = seg // intervalo_min_seg
-        buckets[bucket_id] = p   # sobrescribe → queda el último del bucket
-
-    precios = sorted(buckets.values(), key=lambda x: x.timestamp)
+    # Decimar a máximo 120 puntos para que el gráfico quede limpio
+    MAX_PUNTOS = 120
+    n = len(todos)
+    if n <= MAX_PUNTOS:
+        precios = todos
+    else:
+        # Tomar 1 punto cada N — distribuido uniformemente
+        paso = n / MAX_PUNTOS
+        precios = [todos[int(i * paso)] for i in range(MAX_PUNTOS)]
+        precios.append(todos[-1])   # siempre incluir el último (precio actual)
 
     return {
         "ticker": inst.ticker,

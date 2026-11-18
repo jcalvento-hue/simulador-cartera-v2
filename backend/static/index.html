@@ -913,8 +913,11 @@ function Operar({ token, perfil }) {
   const [historial, setHistorial] = useState([]);
   const [historialKey, setHistorialKey] = useState(0);
   const [periodo, setPeriodo] = useState("sesion");
+  const [chartZoom, setChartZoom] = useState(false);
   const chartRef = useRef(null);
   const chartInstanceRef = useRef(null);
+  const chartZoomRef = useRef(null);
+  const chartZoomInstanceRef = useRef(null);
 
   const cargarMercado = useCallback(async () => {
     try {
@@ -986,6 +989,44 @@ function Operar({ token, perfil }) {
     });
     return () => { if (chartInstanceRef.current) chartInstanceRef.current.destroy(); };
   }, [historial, periodo]);
+
+  // Dibujar chart del modal zoom cuando se abre
+  useEffect(() => {
+    if (!chartZoom || !chartZoomRef.current || historial.length === 0) return;
+    if (chartZoomInstanceRef.current) chartZoomInstanceRef.current.destroy();
+    const labels = historial.map(h => fmtLabel(h.timestamp, periodo));
+    const datos = historial.map(h => h.precio);
+    const primero = datos[0];
+    const ultimo = datos[datos.length - 1];
+    const color = ultimo >= primero ? "#16a34a" : "#dc2626";
+    chartZoomInstanceRef.current = new Chart(chartZoomRef.current, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          data: datos,
+          borderColor: color,
+          backgroundColor: color + "18",
+          borderWidth: 2,
+          pointRadius: historial.length < 50 ? 3 : 0,
+          fill: true,
+          tension: 0.3,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => `$${ctx.parsed.y.toFixed(2)}` }
+        }},
+        scales: {
+          x: { ticks: { maxTicksLimit: 8, font: { size: 11 } }, grid: { display: false } },
+          y: { ticks: { font: { size: 11 }, callback: v => `$${v.toFixed(0)}` }, grid: { color: "#e5e7eb" } }
+        }
+      }
+    });
+    return () => { if (chartZoomInstanceRef.current) chartZoomInstanceRef.current.destroy(); };
+  }, [chartZoom, historial, periodo]);
 
   async function verPreview() {
     if (!seleccionado || !cantidad || parseInt(cantidad) <= 0) return;
@@ -1135,13 +1176,53 @@ function Operar({ token, perfil }) {
                 >{label}</button>
               ))}
             </div>
-            <div style={{ height: 110, position: "relative" }}>
+            <div style={{ height: 110, position: "relative", cursor: historial.length > 1 ? "zoom-in" : "default" }}
+                 onClick={() => historial.length > 1 && setChartZoom(true)}
+                 title="Click para ampliar">
               {historial.length > 1
                 ? <canvas ref={chartRef} />
                 : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--gris)" }}>Cargando historial...</div>
               }
             </div>
           </div>
+
+          {/* Modal zoom del gráfico */}
+          {chartZoom && (
+            <div style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+              zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center",
+            }} onClick={() => setChartZoom(false)}>
+              <div style={{
+                background: "#fff", borderRadius: 12, padding: 20,
+                width: "min(90vw, 700px)", boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+              }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div>
+                    <span style={{ fontWeight: 700, fontSize: 15 }}>{seleccionado.ticker}</span>
+                    <span style={{ marginLeft: 10, fontSize: 13, color: "var(--gris)" }}>{seleccionado.nombre}</span>
+                    <span style={{ marginLeft: 10, fontSize: 15, fontWeight: 700 }}>{fmt(seleccionado.precio_actual)}</span>
+                    <span style={{ marginLeft: 8, fontSize: 13 }} className={seleccionado.variacion_sesion_pct >= 0 ? "pos" : "neg"}>{fmtPct(seleccionado.variacion_sesion_pct)}</span>
+                  </div>
+                  <button onClick={() => setChartZoom(false)}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "var(--gris)", lineHeight: 1 }}>✕</button>
+                </div>
+                {/* Botones de período en el modal */}
+                <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+                  {[{ key: "sesion", label: "Hoy" }, { key: "1s", label: "1S" }, { key: "1m", label: "1M" }, { key: "1a", label: "1A" }].map(({ key, label }) => (
+                    <button key={key} onClick={() => setPeriodo(key)} style={{
+                      padding: "3px 10px", fontSize: 12, fontWeight: periodo === key ? 700 : 400,
+                      border: `1px solid ${periodo === key ? "var(--azul)" : "#d1d5db"}`,
+                      borderRadius: 4, background: periodo === key ? "var(--azul)" : "transparent",
+                      color: periodo === key ? "#fff" : "var(--gris)", cursor: "pointer",
+                    }}>{label}</button>
+                  ))}
+                </div>
+                <div style={{ height: 280, position: "relative" }}>
+                  <canvas ref={chartZoomRef} />
+                </div>
+              </div>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 6 }}>
             <button className={`btn btn-sm ${tipo === "compra" ? "btn-success" : "btn-outline"}`} style={{ flex: 1 }} onClick={() => setTipo("compra")}>Compra</button>
             <button className={`btn btn-sm ${tipo === "venta" ? "btn-danger" : "btn-outline"}`} style={{ flex: 1 }} onClick={() => setTipo("venta")}>Venta</button>
