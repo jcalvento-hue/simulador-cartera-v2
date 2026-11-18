@@ -2473,6 +2473,7 @@ function App() {
 
   function handleLogin(data) {
     setSession(data);
+    window.__token = data.access_token; // debug only
     if (data.role === "docente") setTab("panel");
     else if (!data.encuesta_completada) setTab("perfil_pendiente");
     else setTab("cartera");
