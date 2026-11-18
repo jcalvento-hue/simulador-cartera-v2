@@ -666,8 +666,34 @@ def asignar_perfil_grupo(
 @router.post("/configuracion/regenerar-historial")
 def regenerar_historial(db: Session = Depends(get_db), _=Depends(get_current_docente)):
     """Regenera el historial de precios para todos los instrumentos activos (últimas 2 horas)."""
+    import logging
+    logger = logging.getLogger("market")
+    logger.setLevel(logging.DEBUG)
+    print("[regenerar] Iniciando regeneración de historial...", flush=True)
     generar_historial_inicial(db=db, horas=2.0)
+    print("[regenerar] Regeneración completada.", flush=True)
     return {"ok": True, "mensaje": "Historial regenerado correctamente."}
+
+
+@router.get("/configuracion/test-historial")
+def test_historial_real(_=Depends(get_current_docente)):
+    """Endpoint de diagnóstico: testea descarga de historial real para GGAL."""
+    from historial_real import obtener_historial_real
+    import traceback
+    try:
+        datos = obtener_historial_real("GGAL")
+        if datos:
+            return {
+                "ok": True,
+                "ticker": "GGAL",
+                "puntos": len(datos),
+                "primero": datos[0],
+                "ultimo": datos[-1],
+            }
+        else:
+            return {"ok": False, "error": "obtener_historial_real devolvió lista vacía"}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
 @router.get("/configuracion")
