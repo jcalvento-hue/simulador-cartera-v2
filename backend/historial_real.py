@@ -1,9 +1,9 @@
 """
 Descarga del precio actual de cada instrumento usando:
-- Rava Bursátil (scraping og:description) para acciones argentinas (BCBA)
+- Rava Bursátil (scraping og:description) para acciones y bonos argentinos
 - Finnhub API para acciones NYSE/US — plan gratuito 60 req/min
 
-Tickers sin cotización (bonos AR, FCIs) → GBM fallback.
+FCIs → GBM fallback (sin cotización pública).
 Retorna dict: {ticker: precio_float}
 """
 
@@ -28,6 +28,16 @@ _RAVA_MAP: Dict[str, str] = {
     "BBAR":  "BBAR",
     "TECO2": "TECO2",
     "CRES":  "CRES",
+}
+
+# Bonos argentinos → Rava (mismos tickers que en el simulador)
+_RAVA_BONOS_MAP: Dict[str, str] = {
+    "AL30":  "AL30",
+    "GD30":  "GD30",
+    "AL35":  "AL35",
+    "AE38":  "AE38",
+    "TX26":  "TX26",
+    "T2X5":  "T2X5",
 }
 
 # Acciones NYSE → Finnhub
@@ -103,9 +113,9 @@ def _quote_finnhub(simbolo: str) -> float | None:
 def obtener_precios_actuales() -> Dict[str, float]:
     """
     Descarga precios actuales para todos los tickers con cotización.
-    - Acciones AR (BCBA): scraping Rava Bursátil (og:description)
+    - Acciones AR (BCBA) + Bonos AR: scraping Rava Bursátil (og:description)
     - Acciones US (NYSE): Finnhub API
-    - Bonos y FCIs: no se incluyen → GBM fallback
+    - FCIs: no se incluyen → GBM fallback
     Retorna {ticker: precio_float}
     """
     precios = {}
@@ -119,6 +129,15 @@ def obtener_precios_actuales() -> Dict[str, float]:
         else:
             print(f"[historial_real] {ticker} (BCBA:{simbolo}): sin precio → GBM fallback", flush=True)
 
+    # Bonos argentinos — Rava scraping
+    for ticker, simbolo in _RAVA_BONOS_MAP.items():
+        precio = _quote_rava(simbolo)
+        if precio:
+            precios[ticker] = precio
+            print(f"[historial_real] {ticker} (bono:{simbolo}): {precio}", flush=True)
+        else:
+            print(f"[historial_real] {ticker} (bono:{simbolo}): sin precio → GBM fallback", flush=True)
+
     # Acciones US — Finnhub
     for ticker, simbolo in _FINNHUB_MAP.items():
         precio = _quote_finnhub(simbolo)
@@ -128,7 +147,7 @@ def obtener_precios_actuales() -> Dict[str, float]:
         else:
             print(f"[historial_real] {ticker} ({simbolo}): sin precio → GBM fallback", flush=True)
 
-    total = len(_RAVA_MAP) + len(_FINNHUB_MAP)
+    total = len(_RAVA_MAP) + len(_RAVA_BONOS_MAP) + len(_FINNHUB_MAP)
     print(f"[historial_real] Total: {len(precios)}/{total} precios obtenidos", flush=True)
     return precios
 
