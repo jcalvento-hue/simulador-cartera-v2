@@ -947,8 +947,8 @@ function Operar({ token, perfil }) {
     const d = new Date(isoStr + "Z");
     if (per === "sesion") return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
     if (per === "1s") return d.toLocaleDateString("es-AR", { weekday: "short", hour: "2-digit", minute: "2-digit" });
-    if (per === "1m") return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short" });
-    if (per === "1a") return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short" });
+    if (per === "1m") return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "2-digit" });
+    if (per === "1a") return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "2-digit" });
     return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short" });
   }
 
@@ -1380,33 +1380,31 @@ function Operar({ token, perfil }) {
                     style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "var(--gris)", lineHeight: 1, flexShrink: 0 }}>✕</button>
                 </div>
 
-                {/* Controles: período + indicadores */}
-                <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-                  {/* Período */}
-                  <div style={{ display: "flex", gap: 3 }}>
-                    {[{ key: "sesion", label: "Hoy" }, { key: "1s", label: "1S" }, { key: "1m", label: "1M" }, { key: "1a", label: "1A" }].map(({ key, label }) => (
-                      <button key={key} onClick={() => setPeriodo(key)} style={{
-                        padding: "3px 10px", fontSize: 12, fontWeight: periodo === key ? 700 : 400,
-                        border: `1px solid ${periodo === key ? "var(--azul)" : "#d1d5db"}`,
-                        borderRadius: 4, background: periodo === key ? "var(--azul)" : "transparent",
-                        color: periodo === key ? "#fff" : "var(--gris)", cursor: "pointer",
-                      }}>{label}</button>
-                    ))}
-                  </div>
-                  {/* Separador */}
-                  <div style={{ width: 1, height: 22, background: "#e5e7eb" }} />
-                  {/* Indicadores */}
+                {/* Controles: período */}
+                <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
+                  {[{ key: "sesion", label: "Hoy" }, { key: "1s", label: "1S" }, { key: "1m", label: "1M" }, { key: "1a", label: "1A" }].map(({ key, label }) => (
+                    <button key={key} onClick={() => setPeriodo(key)} style={{
+                      padding: "3px 10px", fontSize: 12, fontWeight: periodo === key ? 700 : 400,
+                      border: `1px solid ${periodo === key ? "var(--azul)" : "#d1d5db"}`,
+                      borderRadius: 4, background: periodo === key ? "var(--azul)" : "transparent",
+                      color: periodo === key ? "#fff" : "var(--gris)", cursor: "pointer",
+                    }}>{label}</button>
+                  ))}
+                </div>
+                {/* Indicadores técnicos */}
+                <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "var(--gris)", marginRight: 2 }}>Indicadores:</span>
                   {[
-                    { key: "ema",  label: "EMA 20",  color: "#f59e0b" },
-                    { key: "bb",   label: "Bollinger",color: "#6366f1" },
-                    { key: "rsi",  label: "RSI 14",   color: "#8b5cf6" },
-                    { key: "macd", label: "MACD",     color: "#2563eb" },
+                    { key: "ema",  label: "EMA 20",   color: "#f59e0b" },
+                    { key: "bb",   label: "Bollinger", color: "#6366f1" },
+                    { key: "rsi",  label: "RSI 14",    color: "#8b5cf6" },
+                    { key: "macd", label: "MACD",      color: "#2563eb" },
                   ].map(({ key, label, color }) => (
                     <button key={key} onClick={() => toggleIndicador(key)} style={{
                       padding: "3px 10px", fontSize: 12, fontWeight: indicadores[key] ? 700 : 400,
                       border: `1px solid ${indicadores[key] ? color : "#d1d5db"}`,
                       borderRadius: 4,
-                      background: indicadores[key] ? color + "18" : "transparent",
+                      background: indicadores[key] ? color + "22" : "transparent",
                       color: indicadores[key] ? color : "var(--gris)",
                       cursor: "pointer",
                     }}>{label}</button>
