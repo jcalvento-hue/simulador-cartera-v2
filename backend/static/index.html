@@ -990,43 +990,214 @@ function Operar({ token, perfil }) {
     return () => { if (chartInstanceRef.current) chartInstanceRef.current.destroy(); };
   }, [historial, periodo]);
 
-  // Dibujar chart del modal zoom cuando se abre
+  // ── Indicadores técnicos ──────────────────────────────────────────────────
+  const [indicadores, setIndicadores] = useState({ ema: false, bb: false, rsi: false, macd: false });
+  const chartRsiRef = useRef(null);
+  const chartRsiInstanceRef = useRef(null);
+  const chartMacdRef = useRef(null);
+  const chartMacdInstanceRef = useRef(null);
+
+  function toggleIndicador(ind) {
+    setIndicadores(prev => ({ ...prev, [ind]: !prev[ind] }));
+  }
+
+  // Cálculos de indicadores sobre array de precios
+  function calcEMA(precios, periodo) {
+    const k = 2 / (periodo + 1);
+    const ema = [precios[0]];
+    for (let i = 1; i < precios.length; i++)
+      ema.push(precios[i] * k + ema[i - 1] * (1 - k));
+    // Primeros (periodo-1) puntos son cálidos pero inexactos — devolver null para no graficar
+    return ema.map((v, i) => i < periodo - 1 ? null : v);
+  }
+
+  function calcBB(precios, n = 20) {
+    const upper = [], lower = [], mid = [];
+    for (let i = 0; i < precios.length; i++) {
+      if (i < n - 1) { upper.push(null); lower.push(null); mid.push(null); continue; }
+      const slice = precios.slice(i - n + 1, i + 1);
+      const mean = slice.reduce((a, b) => a + b, 0) / n;
+      const std = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+      mid.push(mean);
+      upper.push(mean + 2 * std);
+      lower.push(mean - 2 * std);
+    }
+    return { upper, lower, mid };
+  }
+
+  function calcRSI(precios, n = 14) {
+    const rsi = new Array(precios.length).fill(null);
+    if (precios.length < n + 1) return rsi;
+    let avgGain = 0, avgLoss = 0;
+    for (let i = 1; i <= n; i++) {
+      const d = precios[i] - precios[i - 1];
+      if (d > 0) avgGain += d; else avgLoss += Math.abs(d);
+    }
+    avgGain /= n; avgLoss /= n;
+    rsi[n] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    for (let i = n + 1; i < precios.length; i++) {
+      const d = precios[i] - precios[i - 1];
+      const gain = d > 0 ? d : 0, loss = d < 0 ? Math.abs(d) : 0;
+      avgGain = (avgGain * (n - 1) + gain) / n;
+      avgLoss = (avgLoss * (n - 1) + loss) / n;
+      rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    }
+    return rsi;
+  }
+
+  function calcMACD(precios) {
+    const ema12 = calcEMA(precios, 12).map((v, i) => v ?? null);
+    const ema26 = calcEMA(precios, 26).map((v, i) => v ?? null);
+    const macdLine = ema12.map((v, i) => (v !== null && ema26[i] !== null) ? v - ema26[i] : null);
+    // Signal: EMA 9 del macd (solo donde macd no es null)
+    const filled = macdLine.filter(v => v !== null);
+    const signalFilled = calcEMA(filled, 9);
+    const signal = new Array(macdLine.length).fill(null);
+    let idx = 0;
+    for (let i = 0; i < macdLine.length; i++) {
+      if (macdLine[i] !== null) { signal[i] = signalFilled[idx++]; }
+    }
+    const histo = macdLine.map((v, i) => (v !== null && signal[i] !== null) ? v - signal[i] : null);
+    return { macdLine, signal, histo };
+  }
+
+  // Dibujar chart del modal zoom + subgráficos de indicadores
   useEffect(() => {
     if (!chartZoom || !chartZoomRef.current || historial.length === 0) return;
     if (chartZoomInstanceRef.current) chartZoomInstanceRef.current.destroy();
+    if (chartRsiInstanceRef.current) chartRsiInstanceRef.current.destroy();
+    if (chartMacdInstanceRef.current) chartMacdInstanceRef.current.destroy();
+
     const labels = historial.map(h => fmtLabel(h.timestamp, periodo));
     const datos = historial.map(h => h.precio);
-    const primero = datos[0];
-    const ultimo = datos[datos.length - 1];
-    const color = ultimo >= primero ? "#16a34a" : "#dc2626";
+    const primero = datos[0], ultimo = datos[datos.length - 1];
+    const colorPrecio = ultimo >= primero ? "#16a34a" : "#dc2626";
+
+    // Datasets principales
+    const datasets = [{
+      label: "Precio",
+      data: datos,
+      borderColor: colorPrecio,
+      backgroundColor: colorPrecio + "12",
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.3,
+      yAxisID: "y",
+      order: 10,
+    }];
+
+    if (indicadores.ema) {
+      const ema20 = calcEMA(datos, 20);
+      datasets.push({
+        label: "EMA 20",
+        data: ema20,
+        borderColor: "#f59e0b",
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: false,
+        tension: 0.3,
+        yAxisID: "y",
+        order: 5,
+      });
+    }
+
+    if (indicadores.bb) {
+      const bb = calcBB(datos, 20);
+      datasets.push(
+        { label: "BB Superior", data: bb.upper, borderColor: "#6366f1", borderWidth: 1, borderDash: [4,2], pointRadius: 0, fill: false, tension: 0.3, yAxisID: "y", order: 4 },
+        { label: "BB Media",    data: bb.mid,   borderColor: "#6366f1", borderWidth: 1, pointRadius: 0, fill: false, tension: 0.3, yAxisID: "y", order: 4 },
+        { label: "BB Inferior", data: bb.lower, borderColor: "#6366f1", borderWidth: 1, borderDash: [4,2], pointRadius: 0, fill: false, tension: 0.3, yAxisID: "y", order: 4 }
+      );
+    }
+
     chartZoomInstanceRef.current = new Chart(chartZoomRef.current, {
       type: "line",
-      data: {
-        labels,
-        datasets: [{
-          data: datos,
-          borderColor: color,
-          backgroundColor: color + "18",
-          borderWidth: 2,
-          pointRadius: historial.length < 50 ? 3 : 0,
-          fill: true,
-          tension: 0.3,
-        }]
-      },
+      data: { labels, datasets },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: {
-          callbacks: { label: ctx => `$${ctx.parsed.y.toFixed(2)}` }
-        }},
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: indicadores.ema || indicadores.bb, position: "top", labels: { font: { size: 11 }, boxWidth: 16 } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y?.toFixed(2) ?? ""}` } }
+        },
         scales: {
           x: { ticks: { maxTicksLimit: 8, font: { size: 11 } }, grid: { display: false } },
           y: { ticks: { font: { size: 11 }, callback: v => `$${v.toFixed(0)}` }, grid: { color: "#e5e7eb" } }
         }
       }
     });
-    return () => { if (chartZoomInstanceRef.current) chartZoomInstanceRef.current.destroy(); };
-  }, [chartZoom, historial, periodo]);
+
+    // Subgráfico RSI
+    if (indicadores.rsi && chartRsiRef.current) {
+      const rsiData = calcRSI(datos, 14);
+      chartRsiInstanceRef.current = new Chart(chartRsiRef.current, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{ label: "RSI 14", data: rsiData, borderColor: "#8b5cf6", borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.3 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `RSI: ${ctx.parsed.y?.toFixed(1) ?? ""}` } } },
+          scales: {
+            x: { ticks: { display: false }, grid: { display: false } },
+            y: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v },
+              grid: { color: "#e5e7eb" },
+              afterDraw: chart => {
+                // Líneas de sobrecompra/sobreventa
+                const ctx2 = chart.ctx;
+                [30, 70].forEach(val => {
+                  const y = chart.scales.y.getPixelForValue(val);
+                  ctx2.save();
+                  ctx2.strokeStyle = val === 70 ? "#dc2626" : "#16a34a";
+                  ctx2.lineWidth = 1;
+                  ctx2.setLineDash([4, 3]);
+                  ctx2.beginPath();
+                  ctx2.moveTo(chart.chartArea.left, y);
+                  ctx2.lineTo(chart.chartArea.right, y);
+                  ctx2.stroke();
+                  ctx2.restore();
+                });
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Subgráfico MACD
+    if (indicadores.macd && chartMacdRef.current) {
+      const { macdLine, signal, histo } = calcMACD(datos);
+      chartMacdInstanceRef.current = new Chart(chartMacdRef.current, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            { type: "bar",  label: "Histograma", data: histo,    backgroundColor: histo.map(v => v === null ? "transparent" : v >= 0 ? "#16a34a66" : "#dc262666"), borderWidth: 0, order: 2 },
+            { type: "line", label: "MACD",       data: macdLine, borderColor: "#2563eb", borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.3, order: 1 },
+            { type: "line", label: "Señal",      data: signal,   borderColor: "#f59e0b", borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.3, order: 1 },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: true, position: "top", labels: { font: { size: 10 }, boxWidth: 14 } },
+            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2) ?? ""}` } }
+          },
+          scales: {
+            x: { ticks: { display: false }, grid: { display: false } },
+            y: { ticks: { font: { size: 10 } }, grid: { color: "#e5e7eb" } }
+          }
+        }
+      });
+    }
+
+    return () => {
+      if (chartZoomInstanceRef.current) chartZoomInstanceRef.current.destroy();
+      if (chartRsiInstanceRef.current) chartRsiInstanceRef.current.destroy();
+      if (chartMacdInstanceRef.current) chartMacdInstanceRef.current.destroy();
+    };
+  }, [chartZoom, historial, periodo, indicadores]);
 
   async function verPreview() {
     if (!seleccionado || !cantidad || parseInt(cantidad) <= 0) return;
@@ -1186,7 +1357,7 @@ function Operar({ token, perfil }) {
             </div>
           </div>
 
-          {/* Modal zoom del gráfico */}
+          {/* Modal zoom del gráfico con indicadores técnicos */}
           {chartZoom && (
             <div style={{
               position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
@@ -1194,32 +1365,82 @@ function Operar({ token, perfil }) {
             }} onClick={() => setChartZoom(false)}>
               <div style={{
                 background: "#fff", borderRadius: 12, padding: 20,
-                width: "min(90vw, 700px)", boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+                width: "min(96vw, 820px)", maxHeight: "92vh", overflowY: "auto",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
               }} onClick={e => e.stopPropagation()}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <div>
-                    <span style={{ fontWeight: 700, fontSize: 15 }}>{seleccionado.ticker}</span>
-                    <span style={{ marginLeft: 10, fontSize: 13, color: "var(--gris)" }}>{seleccionado.nombre}</span>
-                    <span style={{ marginLeft: 10, fontSize: 15, fontWeight: 700 }}>{fmt(seleccionado.precio_actual)}</span>
-                    <span style={{ marginLeft: 8, fontSize: 13 }} className={seleccionado.variacion_sesion_pct >= 0 ? "pos" : "neg"}>{fmtPct(seleccionado.variacion_sesion_pct)}</span>
+                {/* Header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 700, fontSize: 16 }}>{seleccionado.ticker}</span>
+                    <span style={{ fontSize: 13, color: "var(--gris)" }}>{seleccionado.nombre}</span>
+                    <span style={{ fontSize: 16, fontWeight: 700 }}>{fmt(seleccionado.precio_actual)}</span>
+                    <span style={{ fontSize: 13 }} className={seleccionado.variacion_sesion_pct >= 0 ? "pos" : "neg"}>{fmtPct(seleccionado.variacion_sesion_pct)}</span>
                   </div>
                   <button onClick={() => setChartZoom(false)}
-                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "var(--gris)", lineHeight: 1 }}>✕</button>
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "var(--gris)", lineHeight: 1, flexShrink: 0 }}>✕</button>
                 </div>
-                {/* Botones de período en el modal */}
-                <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
-                  {[{ key: "sesion", label: "Hoy" }, { key: "1s", label: "1S" }, { key: "1m", label: "1M" }, { key: "1a", label: "1A" }].map(({ key, label }) => (
-                    <button key={key} onClick={() => setPeriodo(key)} style={{
-                      padding: "3px 10px", fontSize: 12, fontWeight: periodo === key ? 700 : 400,
-                      border: `1px solid ${periodo === key ? "var(--azul)" : "#d1d5db"}`,
-                      borderRadius: 4, background: periodo === key ? "var(--azul)" : "transparent",
-                      color: periodo === key ? "#fff" : "var(--gris)", cursor: "pointer",
+
+                {/* Controles: período + indicadores */}
+                <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+                  {/* Período */}
+                  <div style={{ display: "flex", gap: 3 }}>
+                    {[{ key: "sesion", label: "Hoy" }, { key: "1s", label: "1S" }, { key: "1m", label: "1M" }, { key: "1a", label: "1A" }].map(({ key, label }) => (
+                      <button key={key} onClick={() => setPeriodo(key)} style={{
+                        padding: "3px 10px", fontSize: 12, fontWeight: periodo === key ? 700 : 400,
+                        border: `1px solid ${periodo === key ? "var(--azul)" : "#d1d5db"}`,
+                        borderRadius: 4, background: periodo === key ? "var(--azul)" : "transparent",
+                        color: periodo === key ? "#fff" : "var(--gris)", cursor: "pointer",
+                      }}>{label}</button>
+                    ))}
+                  </div>
+                  {/* Separador */}
+                  <div style={{ width: 1, height: 22, background: "#e5e7eb" }} />
+                  {/* Indicadores */}
+                  {[
+                    { key: "ema",  label: "EMA 20",  color: "#f59e0b" },
+                    { key: "bb",   label: "Bollinger",color: "#6366f1" },
+                    { key: "rsi",  label: "RSI 14",   color: "#8b5cf6" },
+                    { key: "macd", label: "MACD",     color: "#2563eb" },
+                  ].map(({ key, label, color }) => (
+                    <button key={key} onClick={() => toggleIndicador(key)} style={{
+                      padding: "3px 10px", fontSize: 12, fontWeight: indicadores[key] ? 700 : 400,
+                      border: `1px solid ${indicadores[key] ? color : "#d1d5db"}`,
+                      borderRadius: 4,
+                      background: indicadores[key] ? color + "18" : "transparent",
+                      color: indicadores[key] ? color : "var(--gris)",
+                      cursor: "pointer",
                     }}>{label}</button>
                   ))}
                 </div>
-                <div style={{ height: 280, position: "relative" }}>
+
+                {/* Gráfico principal */}
+                <div style={{ height: 260, position: "relative" }}>
                   <canvas ref={chartZoomRef} />
                 </div>
+
+                {/* Subgráfico RSI */}
+                {indicadores.rsi && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, color: "#8b5cf6", fontWeight: 600, marginBottom: 2 }}>
+                      RSI 14 — <span style={{ color: "#dc2626" }}>sobrecompra &gt;70</span> · <span style={{ color: "#16a34a" }}>sobreventa &lt;30</span>
+                    </div>
+                    <div style={{ height: 90, position: "relative" }}>
+                      <canvas ref={chartRsiRef} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Subgráfico MACD */}
+                {indicadores.macd && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, color: "#2563eb", fontWeight: 600, marginBottom: 2 }}>
+                      MACD (12,26,9) — cruce MACD↑Señal = señal alcista · MACD↓Señal = señal bajista
+                    </div>
+                    <div style={{ height: 90, position: "relative" }}>
+                      <canvas ref={chartMacdRef} />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
