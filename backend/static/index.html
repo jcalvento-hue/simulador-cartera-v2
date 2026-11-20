@@ -991,7 +991,7 @@ function Operar({ token, perfil }) {
   }, [historial, periodo]);
 
   // ── Indicadores técnicos ──────────────────────────────────────────────────
-  const [indicadores, setIndicadores] = useState({ ema: false, bb: false, rsi: false, macd: false });
+  const [indicadores, setIndicadores] = useState({ ema10: false, ema: false, ema50: false, bb: false, rsi: false, macd: false });
   const chartRsiRef = useRef(null);
   const chartRsiInstanceRef = useRef(null);
   const chartMacdRef = useRef(null);
@@ -1087,18 +1087,27 @@ function Operar({ token, perfil }) {
       order: 10,
     }];
 
-    if (indicadores.ema) {
-      const ema20 = calcEMA(datos, 20);
+    if (indicadores.ema10) {
       datasets.push({
-        label: "EMA 20",
-        data: ema20,
-        borderColor: "#f59e0b",
-        borderWidth: 1.5,
-        pointRadius: 0,
-        fill: false,
-        tension: 0.3,
-        yAxisID: "y",
-        order: 5,
+        label: "EMA 10", data: calcEMA(datos, 10),
+        borderColor: "#10b981", borderWidth: 1.5, pointRadius: 0,
+        fill: false, tension: 0.3, yAxisID: "y", order: 5,
+      });
+    }
+
+    if (indicadores.ema) {
+      datasets.push({
+        label: "EMA 20", data: calcEMA(datos, 20),
+        borderColor: "#f59e0b", borderWidth: 1.5, pointRadius: 0,
+        fill: false, tension: 0.3, yAxisID: "y", order: 5,
+      });
+    }
+
+    if (indicadores.ema50) {
+      datasets.push({
+        label: "EMA 50", data: calcEMA(datos, 50),
+        borderColor: "#ef4444", borderWidth: 1.5, pointRadius: 0,
+        fill: false, tension: 0.3, yAxisID: "y", order: 5,
       });
     }
 
@@ -1395,10 +1404,12 @@ function Operar({ token, perfil }) {
                 <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: "var(--gris)", marginRight: 2 }}>Indicadores:</span>
                   {[
-                    { key: "ema",  label: "EMA 20",   color: "#f59e0b" },
-                    { key: "bb",   label: "Bollinger", color: "#6366f1" },
-                    { key: "rsi",  label: "RSI 14",    color: "#8b5cf6" },
-                    { key: "macd", label: "MACD",      color: "#2563eb" },
+                    { key: "ema10", label: "EMA 10",   color: "#10b981" },
+                    { key: "ema",   label: "EMA 20",   color: "#f59e0b" },
+                    { key: "ema50", label: "EMA 50",   color: "#ef4444" },
+                    { key: "bb",    label: "Bollinger", color: "#6366f1" },
+                    { key: "rsi",   label: "RSI 14",    color: "#8b5cf6" },
+                    { key: "macd",  label: "MACD",      color: "#2563eb" },
                   ].map(({ key, label, color }) => (
                     <button key={key} onClick={() => toggleIndicador(key)} style={{
                       padding: "3px 10px", fontSize: 12, fontWeight: indicadores[key] ? 700 : 400,
