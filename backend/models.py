@@ -234,6 +234,48 @@ class PerfilGrupo(Base):
     grupo = relationship("Grupo", backref="perfil_docente")
 
 
+class InformeFinal(Base):
+    """
+    Informe de cierre pedagógico enviado por cada grupo al finalizar la simulación.
+    Incluye métricas auto-pobladas + conclusión escrita + autoevaluación estructurada.
+    Mecánica: un grupo puede ver los informes de otros SOLO después de haber enviado el suyo.
+    """
+    __tablename__ = "informes_finales"
+    id = Column(Integer, primary_key=True)
+    grupo_id = Column(Integer, ForeignKey("grupos.id"), nullable=False, unique=True)
+
+    # ── Métricas auto-pobladas al momento del envío ──────────────────────────
+    capital_inicial = Column(Float, nullable=True)
+    capital_final = Column(Float, nullable=True)
+    rentabilidad_pct = Column(Float, nullable=True)      # (capital_final / capital_inicial - 1) * 100
+    n_operaciones = Column(Integer, nullable=True)
+    n_compras = Column(Integer, nullable=True)
+    n_ventas = Column(Integer, nullable=True)
+    ticker_mas_operado = Column(String(20), nullable=True)
+    mejor_operacion = Column(JSON, nullable=True)        # {ticker, ganancia_pct, fecha}
+    peor_operacion = Column(JSON, nullable=True)         # {ticker, ganancia_pct, fecha}
+    composicion_final = Column(JSON, nullable=True)      # [{ticker, pct_cartera}, ...]
+    sectores_finales = Column(JSON, nullable=True)       # [{sector, pct}, ...]
+
+    # ── Conclusión libre ─────────────────────────────────────────────────────
+    conclusion = Column(Text, nullable=True)             # análisis narrativo del grupo
+
+    # ── Autoevaluación estructurada ──────────────────────────────────────────
+    # Escala 1-5 o texto libre según el campo
+    estrategia_descripcion = Column(Text, nullable=True)   # ¿Cuál fue su estrategia?
+    decisiones_clave = Column(Text, nullable=True)         # ¿Cuáles fueron sus 2-3 decisiones más importantes?
+    que_funcionó = Column(Text, nullable=True)             # ¿Qué funcionó?
+    que_cambiarían = Column(Text, nullable=True)           # ¿Qué cambiarían?
+    aprendizaje_principal = Column(Text, nullable=True)    # ¿Cuál fue el principal aprendizaje?
+    autocalificacion = Column(Integer, nullable=True)      # 1-10, nota que el grupo se pone
+
+    # ── Estado ───────────────────────────────────────────────────────────────
+    enviado_en = Column(DateTime, nullable=True)           # None = borrador, fecha = enviado
+    creado_en = Column(DateTime, default=datetime.utcnow)
+
+    grupo = relationship("Grupo", backref="informe_final")
+
+
 # ── Engine y sesión ──────────────────────────────────────────────────────────
 
 DATABASE_URL = "sqlite:///./simulador.db"
@@ -266,6 +308,7 @@ def init_db():
         "ALTER TABLE noticias ADD COLUMN impacto_pct FLOAT",
         "ALTER TABLE noticias ADD COLUMN impacto_tipo VARCHAR(10)",
         "ALTER TABLE noticias ADD COLUMN sector_relacionado VARCHAR(100)",
+        # InformeFinal — tabla nueva, se crea con create_all; migraciones de columnas futuras irían acá
     ]
     with engine.connect() as conn:
         for sql in migrations:

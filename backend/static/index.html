@@ -1767,6 +1767,11 @@ function PanelDocente({ token }) {
   const [loadingBitacoras, setLoadingBitacoras] = useState(false);
   const [filtroBitacoraGrupo, setFiltroBitacoraGrupo] = useState("");
 
+  // Informes finales (docente)
+  const [informesDocente, setInformesDocente] = useState([]);
+  const [loadingInformes, setLoadingInformes] = useState(false);
+  const [informeSeleccionado, setInformeSeleccionado] = useState(null);
+
   // Métricas de riesgo por grupo
   const [metricasGrupos, setMetricasGrupos] = useState([]);
   const [loadingMetricas, setLoadingMetricas] = useState(false);
@@ -1803,6 +1808,16 @@ function PanelDocente({ token }) {
       api("GET", "/api/docente/configuracion", null, token),
     ]).then(([g, a, n, r, cfg]) => { setGrupos(g); setAlumnos(a); setNoticias(n); setRanking(r); setConfig(cfg); });
   }, [token]);
+
+  // Cargar informes finales al entrar a la tab informes
+  useEffect(() => {
+    if (tab !== "informes") return;
+    setLoadingInformes(true);
+    api("GET", "/api/informes/docente/todos", null, token)
+      .then(data => setInformesDocente(data))
+      .catch(() => {})
+      .finally(() => setLoadingInformes(false));
+  }, [tab, token]);
 
   // Cargar bitácoras al entrar a la tab bitacoras
   useEffect(() => {
@@ -2042,6 +2057,7 @@ function PanelDocente({ token }) {
           { id: "ranking",   label: "🏆 Ranking" },
           { id: "metricas",  label: "📊 Métricas" },
           { id: "bitacoras", label: "📓 Bitácoras" },
+          { id: "informes",  label: "📋 Informes finales" },
           { id: "config",    label: "⚙️ Configuración" },
         ].map(t => (
           <button key={t.id} className={`btn ${tab === t.id ? "btn-primary" : "btn-outline"} btn-sm`}
@@ -2721,6 +2737,110 @@ function PanelDocente({ token }) {
         </div>
       )}
 
+      {tab === "informes" && (
+        <div className="panel-section">
+          <div className="panel-section-title">📋 Informes finales de grupos</div>
+          <p style={{ fontSize: 13, color: "var(--gris)", marginBottom: 14 }}>
+            Estado de entrega de cada grupo. Hacé click en un informe enviado para verlo completo.
+          </p>
+
+          {loadingInformes ? (
+            <p style={{ color: "var(--gris)", fontSize: 13 }}>Cargando informes…</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {informesDocente.map(inf => {
+                const estadoColor = inf.estado === "enviado" ? "var(--verde)" : inf.estado === "borrador" ? "var(--naranja)" : "var(--gris)";
+                const estadoLabel = inf.estado === "enviado" ? "✅ Enviado" : inf.estado === "borrador" ? "✏️ Borrador" : "⏳ Pendiente";
+                return (
+                  <div key={inf.grupo_id} style={{
+                    border: "1px solid #e5e7eb", borderRadius: 10, padding: "14px 18px",
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    background: inf.estado === "enviado" ? "#f0fdf4" : "#fff",
+                    cursor: inf.estado === "enviado" ? "pointer" : "default",
+                  }}
+                  onClick={() => inf.estado === "enviado" && setInformeSeleccionado(informeSeleccionado?.grupo_id === inf.grupo_id ? null : inf)}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{inf.grupo_nombre}</div>
+                      {inf.enviado_en && (
+                        <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>
+                          Enviado: {new Date(inf.enviado_en).toLocaleString("es-AR")}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      {inf.rentabilidad_pct !== undefined && inf.rentabilidad_pct !== null && (
+                        <span style={{ fontSize: 14, fontWeight: 700, color: inf.rentabilidad_pct >= 0 ? "var(--verde)" : "var(--rojo)" }}>
+                          {inf.rentabilidad_pct >= 0 ? "+" : ""}{inf.rentabilidad_pct?.toFixed(2)}%
+                        </span>
+                      )}
+                      <span style={{ fontSize: 12, fontWeight: 600, color: estadoColor }}>{estadoLabel}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Detalle del informe seleccionado */}
+          {informeSeleccionado && (
+            <div style={{ marginTop: 20, border: "2px solid var(--azul)", borderRadius: 12, padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 17 }}>📋 {informeSeleccionado.grupo_nombre}</div>
+                <button className="btn btn-outline btn-sm" onClick={() => setInformeSeleccionado(null)}>✕ Cerrar</button>
+              </div>
+
+              {/* KPIs */}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+                {[
+                  { label: "Rentabilidad", value: `${informeSeleccionado.rentabilidad_pct >= 0 ? "+" : ""}${informeSeleccionado.rentabilidad_pct?.toFixed(2)}%`, color: informeSeleccionado.rentabilidad_pct >= 0 ? "var(--verde)" : "var(--rojo)" },
+                  { label: "Capital final", value: `$${(informeSeleccionado.capital_final||0).toLocaleString("es-AR", {maximumFractionDigits:0})}` },
+                  { label: "Operaciones", value: `${informeSeleccionado.n_operaciones} (${informeSeleccionado.n_compras}C/${informeSeleccionado.n_ventas}V)` },
+                  { label: "Más operado", value: informeSeleccionado.ticker_mas_operado || "—" },
+                  { label: "Autocalificación", value: informeSeleccionado.autocalificacion ? `${informeSeleccionado.autocalificacion}/10` : "—" },
+                ].map(k => (
+                  <div key={k.label} style={{ background: "var(--fondo)", borderRadius: 8, padding: "10px 16px", flex: "1 1 140px" }}>
+                    <div style={{ fontSize: 10, color: "var(--gris)", textTransform: "uppercase", marginBottom: 4 }}>{k.label}</div>
+                    <div style={{ fontWeight: 700, fontSize: 16, color: k.color || "var(--texto)" }}>{k.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Composición */}
+              {informeSeleccionado.composicion_final?.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Composición final de cartera</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {informeSeleccionado.composicion_final.map(c => (
+                      <span key={c.ticker} style={{ background: "#e0e7ff", color: "#3730a3", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>
+                        {c.ticker} {c.pct_cartera}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Narrativa */}
+              {[
+                { label: "🎯 Estrategia", key: "estrategia_descripcion" },
+                { label: "🔑 Decisiones clave", key: "decisiones_clave" },
+                { label: "✅ Qué funcionó", key: "que_funcionó" },
+                { label: "🔄 Qué cambiarían", key: "que_cambiarían" },
+                { label: "💡 Aprendizaje principal", key: "aprendizaje_principal" },
+                { label: "📝 Conclusión general", key: "conclusion" },
+              ].map(f => informeSeleccionado[f.key] && (
+                <div key={f.key} style={{ marginBottom: 12 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{f.label}</div>
+                  <div style={{ fontSize: 13, color: "var(--texto)", background: "var(--fondo)", borderRadius: 8, padding: "10px 14px", lineHeight: 1.6 }}>
+                    {informeSeleccionado[f.key]}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {tab === "config" && (
         <div style={{ maxWidth: 520 }}>
           {/* Activar / desactivar simulador */}
@@ -2957,6 +3077,262 @@ function EncuestaPendiente({ onIrEncuesta }) {
   );
 }
 
+// ── INFORME FINAL DEL GRUPO ────────────────────────────────────────────────
+function InformeFinalGrupo({ token }) {
+  const [informe, setInforme] = useState(null);
+  const [otros, setOtros] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [form, setForm] = useState({
+    estrategia_descripcion: "",
+    decisiones_clave: "",
+    "que_funcionó": "",
+    "que_cambiarían": "",
+    aprendizaje_principal: "",
+    conclusion: "",
+    autocalificacion: "",
+  });
+
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3500); };
+
+  useEffect(() => {
+    setLoading(true);
+    api("GET", "/api/informes/mi-informe", null, token)
+      .then(data => {
+        setInforme(data);
+        setForm({
+          estrategia_descripcion: data.estrategia_descripcion || "",
+          decisiones_clave: data.decisiones_clave || "",
+          "que_funcionó": data["que_funcionó"] || "",
+          "que_cambiarían": data["que_cambiarían"] || "",
+          aprendizaje_principal: data.aprendizaje_principal || "",
+          conclusion: data.conclusion || "",
+          autocalificacion: data.autocalificacion?.toString() || "",
+        });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  async function cargarOtros() {
+    try {
+      const data = await api("GET", "/api/informes/otros", null, token);
+      setOtros(data);
+    } catch(e) {
+      showToast("⚠️ " + (e.message || "No disponible aún"));
+    }
+  }
+
+  async function guardarBorrador() {
+    setGuardando(true);
+    try {
+      const payload = { ...form, autocalificacion: form.autocalificacion ? parseInt(form.autocalificacion) : null };
+      const data = await api("PUT", "/api/informes/mi-informe", payload, token);
+      setInforme(data);
+      showToast("✅ Borrador guardado");
+    } catch(e) {
+      showToast("❌ Error al guardar");
+    } finally { setGuardando(false); }
+  }
+
+  async function enviarInforme() {
+    if (!window.confirm("¿Confirmar envío? Una vez enviado no podrás modificar el informe.")) return;
+    setEnviando(true);
+    try {
+      const payload = { ...form, autocalificacion: form.autocalificacion ? parseInt(form.autocalificacion) : null };
+      await api("PUT", "/api/informes/mi-informe", payload, token);
+      const data = await api("POST", "/api/informes/mi-informe/enviar", {}, token);
+      setInforme(data);
+      showToast("🎉 Informe enviado exitosamente");
+    } catch(e) {
+      showToast("❌ " + (e.message || "Error al enviar"));
+    } finally { setEnviando(false); }
+  }
+
+  const yaEnviado = informe?.enviado_en;
+  const fmt = v => v?.toLocaleString?.("es-AR", {minimumFractionDigits:2,maximumFractionDigits:2}) ?? v;
+  const fmtPesos = v => `$${(v||0).toLocaleString("es-AR",{maximumFractionDigits:0})}`;
+
+  if (loading) return <div className="page"><p style={{color:"var(--gris)"}}>Cargando…</p></div>;
+
+  return (
+    <div className="page">
+      {toast && <div className="toast">{toast}</div>}
+
+      <div className="card">
+        <div className="card-title">📋 Informe final de la simulación</div>
+
+        {/* Estado del envío */}
+        {yaEnviado && (
+          <div style={{ background:"#f0fdf4", border:"1px solid #86efac", borderRadius:8, padding:"10px 16px", marginBottom:16, fontSize:13, color:"var(--verde)", fontWeight:600 }}>
+            ✅ Informe enviado el {new Date(informe.enviado_en).toLocaleString("es-AR")}
+          </div>
+        )}
+
+        {/* KPIs de desempeño */}
+        {informe && (
+          <div>
+            <div style={{ fontWeight:700, fontSize:14, marginBottom:10 }}>📊 Tu desempeño en la simulación</div>
+            <div className="kpi-row">
+              <div className="kpi">
+                <div className="kpi-label">Rentabilidad</div>
+                <div className={`kpi-value ${(informe.rentabilidad_pct||0) >= 0 ? "pos" : "neg"}`}>
+                  {(informe.rentabilidad_pct||0) >= 0 ? "+" : ""}{(informe.rentabilidad_pct||0).toFixed(2)}%
+                </div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label">Capital final</div>
+                <div className="kpi-value">{fmtPesos(informe.capital_final)}</div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label">Operaciones</div>
+                <div className="kpi-value">{informe.n_operaciones}</div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label">Más operado</div>
+                <div className="kpi-value" style={{fontSize:16}}>{informe.ticker_mas_operado || "—"}</div>
+              </div>
+            </div>
+
+            {/* Composición */}
+            {informe.composicion_final?.length > 0 && (
+              <div style={{marginBottom:16}}>
+                <div style={{fontWeight:600, fontSize:13, marginBottom:6}}>Composición final de cartera</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {informe.composicion_final.map(c => (
+                    <span key={c.ticker} style={{background:"#e0e7ff",color:"#3730a3",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:600}}>
+                      {c.ticker} {c.pct_cartera}%
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Mejor / peor operación */}
+            <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+              {informe.mejor_operacion && (
+                <div style={{flex:"1 1 200px",background:"#f0fdf4",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{fontSize:11,color:"var(--gris)",textTransform:"uppercase",marginBottom:4}}>Mejor operación</div>
+                  <div style={{fontWeight:700,color:"var(--verde)"}}>{informe.mejor_operacion.ticker} +{informe.mejor_operacion.ganancia_pct?.toFixed(1)}%</div>
+                  <div style={{fontSize:11,color:"var(--gris)"}}>{informe.mejor_operacion.fecha}</div>
+                </div>
+              )}
+              {informe.peor_operacion && (
+                <div style={{flex:"1 1 200px",background:"#fef2f2",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{fontSize:11,color:"var(--gris)",textTransform:"uppercase",marginBottom:4}}>Peor operación</div>
+                  <div style={{fontWeight:700,color:"var(--rojo)"}}>{informe.peor_operacion.ticker} {informe.peor_operacion.ganancia_pct?.toFixed(1)}%</div>
+                  <div style={{fontSize:11,color:"var(--gris)"}}>{informe.peor_operacion.fecha}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Formulario de autoevaluación */}
+        <div style={{borderTop:"1px solid #e5e7eb",paddingTop:18,marginTop:4}}>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>✍️ Autoevaluación y conclusión</div>
+
+          {[
+            { key:"estrategia_descripcion", label:"🎯 ¿Cuál fue la estrategia del grupo?", placeholder:"Describí el enfoque general: ¿fueron conservadores, agresivos? ¿Priorizaron diversificación, sectores específicos, timing del mercado?" },
+            { key:"decisiones_clave", label:"🔑 Decisiones clave (2-3 más importantes)", placeholder:"¿Qué 2 o 3 operaciones o decisiones definieron el resultado? ¿Por qué las tomaron?" },
+            { key:"que_funcionó", label:"✅ ¿Qué funcionó bien?", placeholder:"¿Qué aspectos de su estrategia dieron resultado?" },
+            { key:"que_cambiarían", label:"🔄 ¿Qué cambiarían si lo hicieran de nuevo?", placeholder:"¿Qué harían diferente con lo que saben ahora?" },
+            { key:"aprendizaje_principal", label:"💡 Principal aprendizaje", placeholder:"¿Cuál fue la enseñanza más valiosa de la simulación?" },
+            { key:"conclusion", label:"📝 Conclusión general", placeholder:"Síntesis final del desempeño del grupo, reflexión sobre el proceso." },
+          ].map(f => (
+            <div key={f.key} style={{marginBottom:16}}>
+              <label style={{display:"block",fontWeight:600,fontSize:13,marginBottom:6}}>{f.label}</label>
+              <textarea
+                rows={3}
+                disabled={yaEnviado}
+                value={form[f.key]}
+                onChange={e => setForm(p => ({...p, [f.key]: e.target.value}))}
+                placeholder={f.placeholder}
+                style={{width:"100%",padding:"10px 12px",fontSize:13,border:"1px solid #d1d5db",borderRadius:8,resize:"vertical",background:yaEnviado?"#f9fafb":"#fff"}}
+              />
+            </div>
+          ))}
+
+          <div style={{marginBottom:20}}>
+            <label style={{display:"block",fontWeight:600,fontSize:13,marginBottom:6}}>🏅 Autocalificación del grupo (1-10)</label>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                <button key={n}
+                  disabled={yaEnviado}
+                  onClick={() => setForm(p => ({...p, autocalificacion: n.toString()}))}
+                  style={{
+                    width:38,height:38,borderRadius:"50%",border:"2px solid",cursor:yaEnviado?"not-allowed":"pointer",fontWeight:700,fontSize:14,
+                    borderColor: form.autocalificacion == n ? "var(--azul)" : "#d1d5db",
+                    background: form.autocalificacion == n ? "var(--azul)" : "#fff",
+                    color: form.autocalificacion == n ? "#fff" : "var(--texto)",
+                  }}
+                >{n}</button>
+              ))}
+            </div>
+          </div>
+
+          {!yaEnviado && (
+            <div style={{display:"flex",gap:10}}>
+              <button className="btn btn-outline" onClick={guardarBorrador} disabled={guardando}>
+                {guardando ? "Guardando…" : "💾 Guardar borrador"}
+              </button>
+              <button className="btn btn-primary" onClick={enviarInforme} disabled={enviando}>
+                {enviando ? "Enviando…" : "📤 Enviar informe final"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Ver informes de otros grupos */}
+      <div className="card">
+        <div className="card-title">🔍 Informes de otros grupos</div>
+        {!yaEnviado ? (
+          <p style={{fontSize:13,color:"var(--gris)"}}>
+            📌 Enviá tu informe primero para desbloquear los informes de los demás grupos.
+          </p>
+        ) : otros === null ? (
+          <button className="btn btn-outline" onClick={cargarOtros}>Ver informes de otros grupos</button>
+        ) : otros.length === 0 ? (
+          <p style={{fontSize:13,color:"var(--gris)"}}>Ningún otro grupo ha enviado su informe aún.</p>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {otros.map(o => (
+              <div key={o.grupo_id} style={{border:"1px solid #e5e7eb",borderRadius:10,padding:"14px 18px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontWeight:700,fontSize:15}}>{o.grupo_nombre}</div>
+                  <span style={{fontWeight:700,fontSize:14,color:(o.rentabilidad_pct||0)>=0?"var(--verde)":"var(--rojo)"}}>
+                    {(o.rentabilidad_pct||0)>=0?"+":""}{(o.rentabilidad_pct||0).toFixed(2)}%
+                  </span>
+                </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                  {o.composicion_final?.map(c => (
+                    <span key={c.ticker} style={{background:"#f3f4f6",borderRadius:5,padding:"2px 8px",fontSize:11,fontWeight:600}}>{c.ticker} {c.pct_cartera}%</span>
+                  ))}
+                </div>
+                {[
+                  {label:"🎯 Estrategia",key:"estrategia_descripcion"},
+                  {label:"💡 Aprendizaje",key:"aprendizaje_principal"},
+                ].map(f => o[f.key] && (
+                  <div key={f.key} style={{marginBottom:8}}>
+                    <div style={{fontSize:12,fontWeight:600,marginBottom:3}}>{f.label}</div>
+                    <div style={{fontSize:12,color:"var(--texto)",background:"var(--fondo)",borderRadius:6,padding:"8px 10px"}}>{o[f.key]}</div>
+                  </div>
+                ))}
+                {o.autocalificacion && (
+                  <div style={{fontSize:12,color:"var(--gris)",marginTop:4}}>Autocalificación: <strong>{o.autocalificacion}/10</strong></div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── APP PRINCIPAL ──────────────────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(null);
@@ -3018,6 +3394,7 @@ function App() {
     { id: "noticias", label: "Noticias", badge: noLeidasCount > 0 ? noLeidasCount : null },
     { id: "ranking", label: "Ranking" },
     { id: "historial", label: "Historial" },
+    { id: "informe", label: "📋 Informe final" },
   ];
 
   return (
@@ -3077,6 +3454,9 @@ function App() {
       )}
       {!esDocente && tab === "historial" && session.encuesta_completada && (
         <Historial token={session.access_token} />
+      )}
+      {!esDocente && tab === "informe" && session.encuesta_completada && (
+        <InformeFinalGrupo token={session.access_token} />
       )}
     </>
   );

@@ -13,6 +13,7 @@ import os
 from models import init_db, SessionLocal, HistorialPrecios
 from market import random_walk_loop, generar_historial_inicial
 from routers import auth, docente, grupos
+from routers import informes
 
 
 @asynccontextmanager
@@ -59,6 +60,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(docente.router)
 app.include_router(grupos.router)
+app.include_router(informes.router)
 
 
 @app.get("/api/health")

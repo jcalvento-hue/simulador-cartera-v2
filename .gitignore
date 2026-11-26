@@ -23,3 +23,8 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Archivos locales / temporales
+QuickNote*.pdf
+bcba_symbols.txt
+backend/static/README.md
