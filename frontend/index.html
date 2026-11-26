@@ -1824,9 +1824,9 @@ function PanelDocente({ token }) {
       .finally(() => setLoadingMetricas(false));
   }, [tab, token]);
 
-  // Cargar instrumentos solo al entrar a la tab config
+  // Cargar instrumentos al entrar a config o noticias
   useEffect(() => {
-    if (tab !== "config") return;
+    if (tab !== "config" && tab !== "noticias") return;
     if (instrumentos.length > 0) return; // ya cargados
     setLoadingInstr(true);
     api("GET", "/api/docente/instrumentos", null, token)
