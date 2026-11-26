@@ -192,8 +192,11 @@ class NoticiaIn(BaseModel):
     contenido: str
     tipo: str = "fundamental"           # fundamental / tecnico
     ticker_relacionado: Optional[str] = None
+    sector_relacionado: Optional[str] = None  # sector afectado (alternativa al ticker)
     publicado_en: datetime              # ISO string desde el frontend
-    duracion_horas: Optional[float] = None  # None = sin vencimiento
+    duracion_horas: Optional[float] = None    # None = sin vencimiento
+    impacto_pct: Optional[float] = None       # % de impacto total, ej: 5.0 = 5%
+    impacto_tipo: Optional[str] = None        # "suba" | "baja"
 
 
 @router.get("/noticias")
@@ -208,6 +211,9 @@ def listar_noticias(db: Session = Depends(get_db), _=Depends(get_current_docente
             "publicado_en": n.publicado_en.isoformat(),
             "duracion_horas": n.duracion_horas,
             "expira_en": (n.publicado_en + timedelta(hours=n.duracion_horas)).isoformat() if n.duracion_horas else None,
+            "impacto_pct": n.impacto_pct,
+            "impacto_tipo": n.impacto_tipo,
+            "sector_relacionado": getattr(n, "sector_relacionado", None),
             "activa": n.activa,
             "vigente": n.activa and n.publicado_en <= ahora and (
                 n.duracion_horas is None or

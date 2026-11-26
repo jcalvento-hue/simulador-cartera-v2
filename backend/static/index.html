@@ -1618,6 +1618,12 @@ function NoticiaCard({ noticia, expanded, onToggle }) {
     >
       <div className="noticia-tipo" style={{ color: tipoColor }}>{tipoLabel}
         {noticia.ticker_relacionado && <span style={{ marginLeft: 8, background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontSize: 10 }}>{noticia.ticker_relacionado}</span>}
+        {noticia.sector_relacionado && <span style={{ marginLeft: 6, background: "#ede9fe", color: "#7c3aed", padding: "1px 6px", borderRadius: 4, fontSize: 10 }}>{noticia.sector_relacionado}</span>}
+        {noticia.impacto_pct && noticia.impacto_tipo && (
+          <span style={{ marginLeft: 6, background: noticia.impacto_tipo === "suba" ? "#dcfce7" : "#fee2e2", color: noticia.impacto_tipo === "suba" ? "#166534" : "#991b1b", padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
+            {noticia.impacto_tipo === "suba" ? "▲" : "▼"} {noticia.impacto_pct}% short-term
+          </span>
+        )}
         {!noticia.leida && <span style={{ marginLeft: 8, background: "var(--azul)", color: "white", padding: "1px 6px", borderRadius: 4, fontSize: 10 }}>NUEVO</span>}
       </div>
       <div className="noticia-titulo">{noticia.titulo}</div>
@@ -1744,7 +1750,7 @@ function PanelDocente({ token }) {
 
   // Formularios
   const [nuevoGrupo, setNuevoGrupo] = useState("");
-  const [nuevaNoticia, setNuevaNot] = useState({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", publicado_en: "", duracion_horas: "" });
+  const [nuevaNoticia, setNuevaNot] = useState({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", sector_relacionado: "", publicado_en: "", duracion_horas: "", impacto_pct: "", impacto_tipo: "suba" });
   const [csvFile, setCsvFile] = useState(null);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
@@ -1951,20 +1957,27 @@ function PanelDocente({ token }) {
   }
 
   async function publicarNoticia() {
-    const { titulo, contenido, tipo, ticker_relacionado, publicado_en, duracion_horas } = nuevaNoticia;
+    const { titulo, contenido, tipo, ticker_relacionado, sector_relacionado, publicado_en, duracion_horas, impacto_pct, impacto_tipo } = nuevaNoticia;
     if (!titulo || !contenido || !publicado_en) {
       flash("error", "Completá título, contenido y fecha de publicación.");
+      return;
+    }
+    if (impacto_pct && !duracion_horas) {
+      flash("error", "Si hay impacto en precio, especificá la duración del efecto.");
       return;
     }
     try {
       await api("POST", "/api/docente/noticias", {
         titulo, contenido, tipo,
         ticker_relacionado: ticker_relacionado || null,
+        sector_relacionado: sector_relacionado || null,
         publicado_en: new Date(publicado_en).toISOString(),
         duracion_horas: duracion_horas ? parseFloat(duracion_horas) : null,
+        impacto_pct: impacto_pct ? parseFloat(impacto_pct) : null,
+        impacto_tipo: impacto_pct ? impacto_tipo : null,
       }, token);
       flash("success", "Noticia publicada.");
-      setNuevaNot({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", publicado_en: "", duracion_horas: "" });
+      setNuevaNot({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", sector_relacionado: "", publicado_en: "", duracion_horas: "", impacto_pct: "", impacto_tipo: "suba" });
       const n = await api("GET", "/api/docente/noticias", null, token);
       setNoticias(n);
     } catch (e) { flash("error", e.message); }
@@ -2347,11 +2360,19 @@ function PanelDocente({ token }) {
                 <option value="tecnico">Análisis técnico</option>
               </select>
             </div>
-            <div className="form-group">
-              <label className="form-label">Ticker relacionado (opcional)</label>
-              <input value={nuevaNoticia.ticker_relacionado}
-                onChange={e => setNuevaNot(p => ({ ...p, ticker_relacionado: e.target.value.toUpperCase() }))}
-                placeholder="Ej: GGAL" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="form-group">
+                <label className="form-label">Ticker relacionado (opcional)</label>
+                <input value={nuevaNoticia.ticker_relacionado}
+                  onChange={e => setNuevaNot(p => ({ ...p, ticker_relacionado: e.target.value.toUpperCase(), sector_relacionado: "" }))}
+                  placeholder="Ej: GGAL" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">— o — Sector relacionado</label>
+                <input value={nuevaNoticia.sector_relacionado}
+                  onChange={e => setNuevaNot(p => ({ ...p, sector_relacionado: e.target.value, ticker_relacionado: "" }))}
+                  placeholder="Ej: Financiero, Energía" />
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Título</label>
@@ -2364,20 +2385,54 @@ function PanelDocente({ token }) {
               <textarea value={nuevaNoticia.contenido}
                 onChange={e => setNuevaNot(p => ({ ...p, contenido: e.target.value }))}
                 placeholder="Contenido de la noticia o análisis..."
-                rows={5} />
+                rows={4} />
             </div>
-            <div className="form-group">
-              <label className="form-label">Fecha y hora de publicación</label>
-              <input type="datetime-local"
-                value={nuevaNoticia.publicado_en}
-                onChange={e => setNuevaNot(p => ({ ...p, publicado_en: e.target.value }))} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="form-group">
+                <label className="form-label">Fecha y hora de publicación</label>
+                <input type="datetime-local"
+                  value={nuevaNoticia.publicado_en}
+                  onChange={e => setNuevaNot(p => ({ ...p, publicado_en: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Duración del efecto (horas)</label>
+                <input type="number" min="0.5" step="0.5"
+                  value={nuevaNoticia.duracion_horas}
+                  onChange={e => setNuevaNot(p => ({ ...p, duracion_horas: e.target.value }))}
+                  placeholder="Ej: 24 — vacío = sin vencimiento" />
+              </div>
             </div>
-            <div className="form-group">
-              <label className="form-label">Duración del efecto (horas, opcional)</label>
-              <input type="number" min="0.5" step="0.5"
-                value={nuevaNoticia.duracion_horas}
-                onChange={e => setNuevaNot(p => ({ ...p, duracion_horas: e.target.value }))}
-                placeholder="Ej: 24 — dejar vacío para sin vencimiento" />
+            <div style={{ background: "var(--fondo)", borderRadius: 8, padding: "12px 14px", marginBottom: 12, border: "1px solid var(--borde)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--texto-secundario)", marginBottom: 8 }}>
+                📈 Efecto real sobre precio (opcional)
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Magnitud del impacto (%)</label>
+                  <input type="number" min="0.1" max="30" step="0.1"
+                    value={nuevaNoticia.impacto_pct}
+                    onChange={e => setNuevaNot(p => ({ ...p, impacto_pct: e.target.value }))}
+                    placeholder="Ej: 5 = 5% de movimiento" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Tipo de movimiento</label>
+                  <select value={nuevaNoticia.impacto_tipo}
+                    onChange={e => setNuevaNot(p => ({ ...p, impacto_tipo: e.target.value }))}>
+                    <option value="suba">📈 Suba</option>
+                    <option value="baja">📉 Baja</option>
+                  </select>
+                </div>
+              </div>
+              {nuevaNoticia.impacto_pct && !nuevaNoticia.duracion_horas && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "var(--rojo)" }}>
+                  ⚠ Con impacto en precio, la duración es obligatoria.
+                </div>
+              )}
+              {nuevaNoticia.impacto_pct && nuevaNoticia.duracion_horas && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "var(--verde)" }}>
+                  ✓ Shock inicial + decay durante {nuevaNoticia.duracion_horas}h · {nuevaNoticia.impacto_tipo === "suba" ? "+" : "-"}{nuevaNoticia.impacto_pct}% sobre {nuevaNoticia.ticker_relacionado || nuevaNoticia.sector_relacionado || "todos los activos"}
+                </div>
+              )}
             </div>
             <button className="btn btn-primary" onClick={publicarNoticia}>Publicar</button>
           </div>
@@ -2400,6 +2455,12 @@ function PanelDocente({ token }) {
                       {n.tipo === "fundamental" ? "📰 Fundamental" : "📈 Técnico"}
                     </span>
                     {n.ticker_relacionado && <span style={{ marginLeft: 6, background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>{n.ticker_relacionado}</span>}
+                    {n.sector_relacionado && <span style={{ marginLeft: 6, background: "#ede9fe", color: "#7c3aed", padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>{n.sector_relacionado}</span>}
+                    {n.impacto_pct && n.impacto_tipo && (
+                      <span style={{ marginLeft: 6, background: n.impacto_tipo === "suba" ? "#dcfce7" : "#fee2e2", color: n.impacto_tipo === "suba" ? "#166534" : "#991b1b", padding: "1px 6px", borderRadius: 4, fontSize: 11, fontWeight: 700 }}>
+                        {n.impacto_tipo === "suba" ? "▲" : "▼"} {n.impacto_pct}%
+                      </span>
+                    )}
                     <div style={{ fontWeight: 600, marginTop: 4 }}>{n.titulo}</div>
                     <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>
                       {fmtFecha(n.publicado_en)}

@@ -12,13 +12,20 @@ Al regenerar historial:
 - Los precios reales se reciben desde el frontend (browser) vía set-precios
 - El GBM arranca desde precio_actual (ya seteado con el precio real)
 - historial_real.py ya no se llama desde aquí (Render bloquea outbound HTTP)
+
+Noticias con efecto real (impacto_pct + impacto_tipo):
+- Shock inicial + decay exponencial: impacto concentrado al inicio, luego decae.
+- τ (tau) = duracion_horas / 3 para que al expirar quede ~5% del shock original.
+- Drift adicional por intervalo = impacto_total * decay_factor / n_intervalos
+- El precio final queda donde está al expirar (no revierte).
+- Puede afectar un ticker específico, un sector completo, o todos los instrumentos.
 """
 import asyncio
 import random
 import math
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
-from models import Instrumento, HistorialPrecios, Caucion, Configuracion, Grupo, SessionLocal
+from models import Instrumento, HistorialPrecios, Caucion, Configuracion, Grupo, Noticia, SessionLocal
 
 # Flag para pausar el random walk mientras se regenera el historial
 # (evita SQLite "database is locked" por escrituras simultáneas)
@@ -47,6 +54,66 @@ async def random_walk_loop():
         _procesar_cauciones()
 
 
+def _noticias_vigentes_market(db: Session, ahora: datetime) -> list:
+    """
+    Devuelve noticias publicadas, activas, no expiradas y con impacto_pct definido.
+    Se usa en el motor de precios para aplicar el drift adicional.
+    """
+    candidatas = (
+        db.query(Noticia)
+        .filter(Noticia.publicado_en <= ahora, Noticia.activa == True)
+        .all()
+    )
+    return [
+        n for n in candidatas
+        if n.impacto_pct and n.impacto_tipo and (
+            n.duracion_horas is None or
+            n.publicado_en + timedelta(hours=n.duracion_horas) >= ahora
+        )
+    ]
+
+
+def _calcular_drift_noticia(noticia: "Noticia", ahora: datetime) -> float:
+    """
+    Calcula el drift adicional (por intervalo de 30s) que aporta una noticia
+    con impacto_pct/impacto_tipo usando el modelo shock inicial + decay exponencial.
+
+    El impacto total = impacto_pct / 100 (fracción del precio).
+    Se distribuye como drift adicional con decay: se suma una fracción del impacto
+    total por cada tick, ponderada por exp(-t/tau) donde tau = duracion_horas/3.
+
+    Para noticias sin vencimiento, tau = 48h (el efecto decae en ~2 días).
+    El drift en cada tick = (impacto_total * decay_pct) / n_ticks_total_estimado
+
+    Retorna el drift adicional a sumar al mu base (negativo = suba, o positivo = baja
+    según signo del impacto_tipo).
+    """
+    if not noticia.impacto_pct or not noticia.impacto_tipo:
+        return 0.0
+
+    impacto_total = noticia.impacto_pct / 100.0
+    if noticia.impacto_tipo == "baja":
+        impacto_total = -impacto_total
+
+    # Tiempo transcurrido desde publicación
+    horas_transcurridas = (ahora - noticia.publicado_en).total_seconds() / 3600.0
+
+    # tau = duracion / 3 para ~5% residual al expirar; sin duración: 48h
+    tau = (noticia.duracion_horas / 3.0) if noticia.duracion_horas else 48.0
+    tau = max(tau, 0.5)  # mínimo 30 minutos
+
+    # Factor de decay en este instante
+    decay_factor = math.exp(-horas_transcurridas / tau)
+
+    # n_ticks estimados para distribuir el impacto: duración total en ticks de 30s
+    duracion_total_seg = (noticia.duracion_horas or 48.0) * 3600.0
+    n_ticks = max(1, duracion_total_seg / _INTERVALO_SEG)
+
+    # Drift por tick en este instante
+    drift_por_tick = (impacto_total * decay_factor) / n_ticks
+    return drift_por_tick
+
+
 def _calcular_mu(inst: "Instrumento", config: "Configuracion") -> float:
     """
     Deriva el drift continuo (mu) por intervalo de 30 segundos a partir de la
@@ -71,24 +138,52 @@ def _calcular_mu(inst: "Instrumento", config: "Configuracion") -> float:
 def _update_prices():
     db: Session = SessionLocal()
     try:
+        ahora = datetime.utcnow()
         config = db.query(Configuracion).first()
         instrumentos = db.query(Instrumento).filter(Instrumento.activo == True).all()
+
+        # Precalcular noticias vigentes con impacto para evitar N queries
+        noticias_con_impacto = _noticias_vigentes_market(db, ahora)
+
         for inst in instrumentos:
+            # Calcular drift adicional por noticias que afectan este instrumento
+            drift_noticias = 0.0
+            for noticia in noticias_con_impacto:
+                # ¿Aplica al ticker?
+                if noticia.ticker_relacionado and noticia.ticker_relacionado == inst.ticker:
+                    drift_noticias += _calcular_drift_noticia(noticia, ahora)
+                # ¿Aplica al sector?
+                elif getattr(noticia, "sector_relacionado", None) and noticia.sector_relacionado == inst.sector:
+                    drift_noticias += _calcular_drift_noticia(noticia, ahora)
+                # ¿Sin ticker ni sector? → afecta a todos
+                elif not noticia.ticker_relacionado and not getattr(noticia, "sector_relacionado", None):
+                    drift_noticias += _calcular_drift_noticia(noticia, ahora)
+
             if inst.tipo == "fci":
                 # Drift puro: precio sube continuamente según TNA del fondo
                 tna = _FCI_TNA.get(inst.ticker, 0.40)
                 factor = math.exp(tna * _INTERVALO_SEG / _SEG_ANUALES)
+                # FCI también puede recibir drift de noticias (ej. noticia macro)
+                if drift_noticias != 0.0:
+                    factor *= math.exp(drift_noticias)
                 nuevo_precio = round(inst.precio_actual * factor, 4)
             else:
                 # Geometric Brownian Motion con drift de tendencia esperada
                 sigma = inst.volatilidad
                 if sigma == 0:
-                    continue
-                mu = _calcular_mu(inst, config)
-                epsilon = random.gauss(0, 1)
-                # GBM con drift: exp((mu - 0.5*sigma²) + sigma*ε)
-                factor = math.exp((mu - 0.5 * sigma**2) + sigma * epsilon)
-                nuevo_precio = round(inst.precio_actual * factor, 2)
+                    # Sin volatilidad pero puede haber shock de noticia
+                    if drift_noticias != 0.0:
+                        nuevo_precio = round(inst.precio_actual * math.exp(drift_noticias), 2)
+                    else:
+                        continue
+                else:
+                    mu = _calcular_mu(inst, config)
+                    # Drift total = tendencia estructural + shock de noticias
+                    mu_total = mu + drift_noticias
+                    epsilon = random.gauss(0, 1)
+                    # GBM con drift total: exp((mu_total - 0.5*sigma²) + sigma*ε)
+                    factor = math.exp((mu_total - 0.5 * sigma**2) + sigma * epsilon)
+                    nuevo_precio = round(inst.precio_actual * factor, 2)
                 # Floor: no puede caer más del 80% del inicial
                 nuevo_precio = max(nuevo_precio, inst.precio_inicial * 0.20)
 
@@ -96,7 +191,7 @@ def _update_prices():
             db.add(HistorialPrecios(
                 instrumento_id=inst.id,
                 precio=nuevo_precio,
-                timestamp=datetime.utcnow()
+                timestamp=ahora
             ))
         db.commit()
     except Exception as e:

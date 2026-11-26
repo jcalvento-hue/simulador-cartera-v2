@@ -150,6 +150,9 @@ class Noticia(Base):
     ticker_relacionado = Column(String(20), nullable=True)  # instrumento al que refiere
     publicado_en = Column(DateTime, nullable=False)    # cuándo se hace visible a los grupos
     duracion_horas = Column(Float, nullable=True)      # horas activa; None = sin vencimiento
+    impacto_pct = Column(Float, nullable=True)         # % de impacto total en precio, ej: 5.0 = 5%
+    impacto_tipo = Column(String(10), nullable=True)   # "suba" | "baja" | None (sin efecto)
+    sector_relacionado = Column(String(100), nullable=True)  # sector afectado (alternativa a ticker)
     creado_en = Column(DateTime, default=datetime.utcnow)
     activa = Column(Boolean, default=True)
 
@@ -260,6 +263,9 @@ def init_db():
         "ALTER TABLE operaciones ADD COLUMN snapshot_indicadores JSON",
         "ALTER TABLE operaciones ADD COLUMN noticias_activas JSON",
         "ALTER TABLE noticias ADD COLUMN duracion_horas FLOAT",
+        "ALTER TABLE noticias ADD COLUMN impacto_pct FLOAT",
+        "ALTER TABLE noticias ADD COLUMN impacto_tipo VARCHAR(10)",
+        "ALTER TABLE noticias ADD COLUMN sector_relacionado VARCHAR(100)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

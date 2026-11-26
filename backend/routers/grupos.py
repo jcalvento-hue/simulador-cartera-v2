@@ -598,9 +598,12 @@ def get_noticias(db: Session = Depends(get_db), grupo: Grupo = Depends(get_curre
             "contenido": n.contenido,
             "tipo": n.tipo,
             "ticker_relacionado": n.ticker_relacionado,
+            "sector_relacionado": getattr(n, "sector_relacionado", None),
             "publicado_en": n.publicado_en.isoformat(),
             "duracion_horas": n.duracion_horas,
             "expira_en": (n.publicado_en + timedelta(hours=n.duracion_horas)).isoformat() if n.duracion_horas else None,
+            "impacto_pct": n.impacto_pct,
+            "impacto_tipo": n.impacto_tipo,
             "leida": n.id in leidas,
         }
         for n in noticias
