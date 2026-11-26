@@ -10,29 +10,22 @@ Mecánica "submit-to-unlock":
     (enviado_en IS NOT NULL). Intentar ver antes devuelve 403.
   - El docente (token docente) ve todos los informes sin restricción.
 """
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from models import (
     SessionLocal, InformeFinal, Grupo, Instrumento,
-    Operacion, Posicion, Configuracion, HistorialCapital
+    Operacion, Posicion, Configuracion, HistorialCapital, get_db
 )
-from routers.grupos import verificar_token_grupo
-from routers.docente import verificar_token_docente
+from auth import get_current_grupo, get_current_docente
 
 router = APIRouter(prefix="/api/informes", tags=["informes"])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -187,14 +180,13 @@ def _serializar(inf: InformeFinal) -> dict:
 
 @router.get("/mi-informe")
 def obtener_mi_informe(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    grupo: Grupo = Depends(get_current_grupo)
 ):
     """
     Devuelve el informe (borrador o enviado) del grupo que hace el request.
     Si no existe, devuelve métricas calculadas al momento y campos vacíos.
     """
-    grupo = verificar_token_grupo(authorization, db)
     inf = db.query(InformeFinal).filter(InformeFinal.grupo_id == grupo.id).first()
 
     if inf:
@@ -222,14 +214,13 @@ def obtener_mi_informe(
 @router.put("/mi-informe")
 def guardar_borrador(
     body: InformeUpdate,
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    grupo: Grupo = Depends(get_current_grupo)
 ):
     """
     Guarda o actualiza el borrador del informe. No lo envía.
     Se puede llamar múltiples veces — solo actualiza los campos textuales.
     """
-    grupo = verificar_token_grupo(authorization, db)
     inf = db.query(InformeFinal).filter(InformeFinal.grupo_id == grupo.id).first()
 
     if not inf:
@@ -249,15 +240,14 @@ def guardar_borrador(
 
 @router.post("/mi-informe/enviar")
 def enviar_informe(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    grupo: Grupo = Depends(get_current_grupo)
 ):
     """
     Marca el informe como enviado (enviado_en = now).
     Recalcula métricas al momento del envío y las congela.
     Una vez enviado no se puede modificar.
     """
-    grupo = verificar_token_grupo(authorization, db)
     inf = db.query(InformeFinal).filter(InformeFinal.grupo_id == grupo.id).first()
 
     if inf and inf.enviado_en:
@@ -281,14 +271,13 @@ def enviar_informe(
 
 @router.get("/otros")
 def ver_otros_informes(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    grupo: Grupo = Depends(get_current_grupo)
 ):
     """
     Devuelve los informes enviados de TODOS los grupos, excepto el propio.
     Solo disponible para grupos que ya enviaron su informe (submit-to-unlock).
     """
-    grupo = verificar_token_grupo(authorization, db)
     mi_inf = db.query(InformeFinal).filter(InformeFinal.grupo_id == grupo.id).first()
 
     if not mi_inf or not mi_inf.enviado_en:
@@ -312,14 +301,13 @@ def ver_otros_informes(
 
 @router.get("/docente/todos")
 def listar_informes_docente(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _=Depends(get_current_docente)
 ):
     """
     Lista todos los informes (borradores + enviados) para el docente.
     Incluye grupos que aún no empezaron su informe (con estado 'pendiente').
     """
-    verificar_token_docente(authorization, db)
 
     grupos = db.query(Grupo).all()
     informes_por_grupo = {
@@ -349,11 +337,10 @@ def listar_informes_docente(
 @router.get("/docente/{grupo_id}")
 def ver_informe_grupo(
     grupo_id: int,
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _=Depends(get_current_docente)
 ):
     """Detalle del informe de un grupo específico — solo docente."""
-    verificar_token_docente(authorization, db)
     inf = db.query(InformeFinal).filter(InformeFinal.grupo_id == grupo_id).first()
     if not inf:
         raise HTTPException(404, "El grupo aún no tiene informe")
