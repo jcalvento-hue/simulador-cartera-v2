@@ -866,25 +866,28 @@ def generar_noticia_ia(
     es_fci = ticker.startswith("FCI")
     es_accion = not es_bono and not es_cedear and not es_fci
 
-    # ── Plantillas por tipo de instrumento y dirección ──────────────────────
+    # ── Plantillas prospectivas (se publican ANTES del movimiento) ───────────
+    # Todas en tiempo futuro/condicional: "se espera", "podría", "analistas anticipan"
     if es_bono:
         titulos_suba = [
-            f"{nombre}: TIR comprimida ante expectativas de mejora fiscal",
-            f"Bonos soberanos {ticker} avanzan por señales positivas del FMI",
-            f"{ticker} recupera terreno tras datos favorables de reservas",
-            f"Mejora el perfil de deuda: {nombre} en alza {impacto_pct:.1f}%",
+            f"Señales del FMI podrían impulsar a {nombre} en las próximas horas",
+            f"{ticker}: acuerdo fiscal esperado presionaría la TIR a la baja",
+            f"Datos de reservas del BCRA abren margen para rally en bonos soberanos",
+            f"Inversores anticipan compresión de spread en {nombre}",
         ]
         titulos_baja = [
-            f"{nombre}: presión vendedora ante incertidumbre cambiaria",
-            f"Bonos {ticker} ceden ante ruido político y salida de capitales",
-            f"{ticker} bajo presión: TIR se amplía {impacto_pct:.1f}% en la jornada",
-            f"Toma de ganancias en {nombre} tras semanas de rally",
+            f"Incertidumbre cambiaria podría golpear a {nombre} en la próxima rueda",
+            f"{ticker}: vencimiento de deuda sin financiamiento confirmado genera cautela",
+            f"Salida de capitales de emergentes amenaza a bonos soberanos como {ticker}",
+            f"Toma de ganancias esperada en {nombre} tras semanas de rally",
         ]
         contenidos_suba = [
-            f"Los títulos públicos en dólares mostraron una jornada positiva impulsada por datos favorables del sector externo. {nombre} ({ticker}) avanzó un {impacto_pct:.1f}% en el mercado secundario, reflejando mayor apetito por riesgo argentino.\n\nEl contexto internacional colaboró: la baja de tasas de la Fed generó flujo hacia emergentes y los bonos soberanos argentinos se beneficiaron de la compresión de spreads. Los operadores destacan que la paridad del {ticker} sigue siendo atractiva respecto a sus comparables regionales.\n\nEl efecto podría sostenerse durante las próximas {durh:.0f} horas si no hay novedades adversas en el frente cambiario. Se recomienda monitorear el volumen de operaciones en BYMA para confirmar la tendencia.",
+            f"Fuentes del mercado anticipan una jornada positiva para los títulos públicos en dólares. El contexto para {nombre} ({ticker}) mejora tras señales favorables del Fondo Monetario Internacional respecto al cumplimiento de metas fiscales, lo que reduciría la prima de riesgo país en las próximas horas.\n\nAnálisis de research local proyectan que la compresión de TIR podría acercar la paridad del {ticker} a niveles de sus comparables regionales. Los operadores estarían posicionándose en anticipación a un dato de reservas mejor al esperado.\n\nSe estima que el efecto podría materializarse durante las próximas {durh:.0f} horas. El volumen de operaciones en BYMA será clave para confirmar si hay convicción real detrás del movimiento.",
+            f"El mercado de renta fija soberana muestra señales de mayor apetito por riesgo argentino. Analistas anticipan que {nombre} ({ticker}) podría beneficiarse de una mejora en el flujo de capitales hacia emergentes, impulsado por expectativas de baja de tasas en EE.UU.\n\nFondos internacionales habrían iniciado posiciones en la curva soberana argentina, lo que presionaría al alza las paridades. La relación TIR/duration del {ticker} luce atractiva para inversores con horizonte de mediano plazo.\n\nEl catalizador podría activarse en las próximas {durh:.0f} horas, aunque analistas advierten que el impacto dependerá de que no haya novedades adversas en el frente cambiario.",
         ]
         contenidos_baja = [
-            f"Los bonos soberanos sufrieron una jornada de ventas generalizada. {nombre} ({ticker}) retrocedió un {impacto_pct:.1f}%, ampliando su spread y deteriorando la paridad.\n\nEl detonante fue la incertidumbre en torno a las negociaciones con organismos multilaterales y la presión sobre las reservas del BCRA. Los inversores institucionales incrementaron coberturas en instrumentos de menor duration.\n\nEl movimiento podría extenderse en las próximas {durh:.0f} horas. Analistas sugieren aguardar definiciones de política monetaria antes de tomar posiciones en este tramo de la curva soberana.",
+            f"El mercado de bonos soberanos enfrenta presiones que podrían traducirse en caídas de precio para {nombre} ({ticker}) en las próximas horas. La incertidumbre en torno al financiamiento de vencimientos de corto plazo generó una salida de posiciones por parte de inversores institucionales.\n\nFondos de cobertura habrían incrementado su exposición vendedora en la curva soberana argentina, anticipando una ampliación del spread. El BCRA no descartaría intervenciones que compliquen el flujo hacia instrumentos en dólares.\n\nAnálisis técnico sugiere que, de no revertirse las condiciones, la presión podría extenderse durante las próximas {durh:.0f} horas. Se recomienda precaución antes de incrementar posición en este tramo de la curva.",
+            f"Señales de cautela se acumulan en torno a los títulos soberanos. {nombre} ({ticker}) podría verse afectado por una salida de capitales de mercados emergentes, en un contexto donde inversores globales reducen exposición a activos de riesgo ante datos de inflación adversos en EE.UU.\n\nEl riesgo país podría escalar si el Gobierno no confirma en las próximas horas el acceso a financiamiento para los vencimientos del trimestre. Operadores locales ya habrían comenzado a reducir duration en sus carteras.\n\nEl impacto estimado podría materializarse en las próximas {durh:.0f} horas. Analistas sugieren aguardar definiciones de política monetaria antes de tomar nuevas posiciones.",
         ]
         titulos = titulos_suba if sube else titulos_baja
         contenidos = contenidos_suba if sube else contenidos_baja
@@ -893,40 +896,42 @@ def generar_noticia_ia(
         empresa_map = {"AAPL": "Apple", "GOOGL": "Alphabet/Google", "AMZN": "Amazon", "MSFT": "Microsoft", "TSLA": "Tesla", "BRKB": "Berkshire Hathaway"}
         empresa = empresa_map.get(ticker, nombre)
         titulos_suba = [
-            f"CEDEARs de {empresa} suben {impacto_pct:.1f}% tras resultados trimestrales",
-            f"{empresa} ({ticker}): impulso alcista por guidance positivo",
-            f"Wall Street arrastra a {ticker}: sube {impacto_pct:.1f}% en Buenos Aires",
-            f"CEDEARs de {empresa} avanzan por revisión al alza de estimaciones",
+            f"{empresa} publica resultados: analistas esperan sorpresa positiva que impulse {ticker}",
+            f"Wall Street podría arrastrar al alza a los CEDEARs de {empresa}",
+            f"Guidance de {empresa} generaría optimismo: mercado anticipa movimiento en {ticker}",
+            f"Revisión al alza de estimaciones beneficiaría a tenedores de {ticker}",
         ]
         titulos_baja = [
-            f"CEDEARs de {empresa} ceden {impacto_pct:.1f}% ante toma de ganancias",
-            f"{empresa} ({ticker}): corrección técnica tras máximos históricos",
-            f"Presión en {ticker}: resultados por debajo de expectativas del mercado",
-            f"CEDEARs de {empresa} bajo presión cambiaria y datos macro de EE.UU.",
+            f"Datos macro de EE.UU. podrían presionar a los CEDEARs de {empresa}",
+            f"{empresa} enfrenta revisión de estimaciones: {ticker} en zona de riesgo",
+            f"Rotación hacia defensivos amenaza a {ticker} en las próximas ruedas",
+            f"Dólar fuerte y tasas altas generan perspectiva negativa para {empresa}",
         ]
         contenidos_suba = [
-            f"Los CEDEARs de {empresa} ({ticker}) registraron una suba del {impacto_pct:.1f}% en la rueda local, siguiendo la tendencia positiva de Wall Street. El rally estuvo impulsado por resultados corporativos que superaron las estimaciones del consenso de analistas.\n\nEn el mercado estadounidense, el papel avanzó en línea con el sector tecnológico, beneficiado por expectativas de recortes de tasas de la Reserva Federal. La relación precio/ganancia sigue siendo atractiva para inversores de largo plazo.\n\nPara los tenedores de CEDEARs, se suma el factor cambiario: la brecha entre el dólar CCL y el oficial amplifica los retornos en pesos. El movimiento podría sostenerse {durh:.0f} horas más si el mercado americano mantiene el tono positivo.",
+            f"El mercado anticipa con optimismo la presentación de resultados trimestrales de {empresa}. Analistas del sell-side proyectan que las cifras podrían superar el consenso, lo que impulsaría al alza los CEDEARs de {ticker} en el mercado local durante las próximas {durh:.0f} horas.\n\nFondos de inversión con exposición a tecnología estadounidense habrían incrementado posiciones anticipando el dato. La relación precio/ganancia proyectada luce atractiva si los márgenes operativos cumplen las expectativas del management.\n\nEl efecto cambiario amplificaría el movimiento en pesos: una suba en dólares en Wall Street se potencia por la brecha entre el dólar CCL y el tipo de cambio oficial. Inversores deberán monitorear el volumen de operaciones de {ticker} en BYMA como señal de convicción.",
+            f"Señales técnicas y fundamentales se alinean para {empresa} ({ticker}). El consenso de analistas apunta a una revisión al alza de los precios objetivo tras el guidance que la compañía daría a conocer en las próximas horas, lo que podría desencadenar compras en los CEDEARs.\n\nLa expectativa de un ciclo de baja de tasas de la Fed favorece a las empresas de alto crecimiento, que ven reducido su costo de capital. {empresa} estaría entre las más beneficiadas del sector dado su perfil de flujos de caja proyectados.\n\nEl movimiento podría materializarse en las próximas {durh:.0f} horas, aunque inversores deben considerar la volatilidad adicional por el factor tipo de cambio implícito en los CEDEARs.",
         ]
         contenidos_baja = [
-            f"Los CEDEARs de {empresa} ({ticker}) cayeron un {impacto_pct:.1f}% en la rueda local, reflejando la debilidad del papel en Wall Street tras datos macro de EE.UU. por debajo de lo esperado.\n\nEl contexto de tasas altas en dólares sigue pesando sobre las valuaciones del sector. Inversores institucionales rotaron hacia sectores defensivos y bonos del Tesoro americano, reduciendo exposición a tecnología y growth.\n\nEn Argentina, el impacto se amplificó por menor liquidez en el mercado de CEDEARs. Se espera que la presión continúe {durh:.0f} horas hasta que haya mayor claridad sobre la próxima decisión de política monetaria de la Fed.",
+            f"El entorno macro en EE.UU. genera perspectivas negativas para {empresa} ({ticker}). Datos de inflación por encima de lo esperado reducirían las probabilidades de un recorte de tasas de la Fed, lo que presiona la valuación de compañías de alto múltiplo como {empresa}.\n\nAnálisis cuantitativos proyectan una posible corrección en el papel durante la próxima rueda en Wall Street, que se trasladaría a los tenedores de CEDEARs en el mercado local. Fondos institucionales habrían iniciado coberturas ante el riesgo de una revisión a la baja del guidance.\n\nEl impacto en los CEDEARs podría extenderse {durh:.0f} horas. Inversores conservadores podrían considerar reducir exposición y esperar mayor claridad sobre el ciclo de tasas antes de reposicionarse.",
+            f"Señales de cautela en torno a {empresa}: analistas anticipan que la próxima presentación de resultados podría decepcionar al mercado. Las estimaciones del consenso fueron revisadas a la baja por tres casas de research internacionales, lo que presiona el precio objetivo del papel.\n\nLa rotación desde growth hacia sectores defensivos que se observa en Wall Street podría afectar especialmente a {empresa}, cuya valuación depende en mayor medida de flujos de caja proyectados a largo plazo. Este movimiento se trasladaría a los CEDEARs de {ticker} en Buenos Aires.\n\nEl deterioro podría materializarse en las próximas {durh:.0f} horas. Se sugiere monitorear el pre-market en EE.UU. antes de tomar decisiones de posición.",
         ]
         titulos = titulos_suba if sube else titulos_baja
         contenidos = contenidos_suba if sube else contenidos_baja
 
     elif es_fci:
         titulos_suba = [
-            f"Fondos money market aceleran rendimiento: TNA sube al {impacto_pct + 37:.0f}%",
-            f"{nombre}: el fondo consolida retorno diario positivo",
+            f"Vencimientos del Tesoro anticipan mayor rendimiento para fondos money market",
+            f"{nombre}: flujo de pesos hacia FCI podría elevar el retorno unitario",
         ]
         titulos_baja = [
-            f"FCI {ticker}: leve ajuste en rendimiento por mayor liquidez del sistema",
-            f"{nombre} ajusta TNA ante baja de tasas de referencia del BCRA",
+            f"Mayor liquidez del sistema presionaría a la baja el rendimiento de {nombre}",
+            f"BCRA evaluaría baja de tasas: FCI de renta fija como {ticker} en zona de ajuste",
         ]
         contenidos_suba = [
-            f"Los fondos comunes de inversión de renta fija mostraron rendimientos positivos en la jornada. {nombre} ({ticker}) acumuló una suba equivalente a una TNA del {impacto_pct + 37:.0f}%, impulsado por la reinversión de cauciones y letras de corto plazo.\n\nEl contexto de tasas reales positivas en pesos favorece a este tipo de instrumento, que capta flujos desde plazos fijos tradicionales. La liquidez del fondo permitió absorber suscripciones sin deteriorar el rendimiento unitario.\n\nPara inversores conservadores, los FCI money market siguen siendo la alternativa más eficiente para administrar el cash de corto plazo en el contexto inflacionario argentino.",
+            f"El mercado de dinero anticipa una mejora en el rendimiento de los fondos comunes de inversión de corto plazo. {nombre} ({ticker}) podría beneficiarse de los vencimientos de letras del Tesoro previstos para las próximas horas, que reinvertidos elevarían la TNA efectiva del portfolio.\n\nEl flujo hacia instrumentos de alta liquidez en pesos se viene acelerando, ya que inversores buscan cobertura frente a la volatilidad del tipo de cambio. Esta demanda adicional permitiría al fondo absorber suscripciones sin deteriorar el rendimiento unitario.\n\nEl efecto positivo sobre el valor de cuotaparte podría verse reflejado en las próximas {durh:.0f} horas. Para perfiles conservadores, los FCI money market siguen siendo la opción más eficiente para administrar el cash de corto plazo.",
         ]
         contenidos_baja = [
-            f"El fondo {nombre} ({ticker}) registró un ajuste técnico en su rendimiento diario, coherente con la mayor liquidez del sistema financiero tras los vencimientos del Tesoro. La TNA efectiva se ubicó levemente por debajo del promedio de la semana.\n\nEl BCRA mantuvo sin cambios la tasa de política monetaria, pero la mayor oferta de pesos en el mercado secundario comprimió los rendimientos de las letras de cortísimo plazo que componen el portfolio del fondo.\n\nEl movimiento es transitorio y no afecta la estrategia del fondo. Se espera normalización en {durh:.0f} horas, una vez que el mercado absorba el exceso de liquidez.",
+            f"El mercado anticipa un ajuste técnico en el rendimiento de los fondos de renta fija de corto plazo. {nombre} ({ticker}) podría verse afectado por una mayor oferta de pesos en el sistema financiero tras el pago de haberes y vencimientos impositivos, que comprimen las tasas de caución y LECAPs de cortísimo plazo.\n\nEl BCRA estaría evaluando una reducción de la tasa de política monetaria ante señales de desaceleración inflacionaria, lo que trasladaría hacia abajo los rendimientos de los activos que componen el portfolio del fondo.\n\nEl ajuste se estima transitorio y podría materializarse en las próximas {durh:.0f} horas. Una vez que el mercado absorba el exceso de liquidez, el rendimiento debería estabilizarse en niveles acordes a la tasa de referencia.",
         ]
         titulos = titulos_suba if sube else titulos_baja
         contenidos = contenidos_suba if sube else contenidos_baja
@@ -934,36 +939,36 @@ def generar_noticia_ia(
     else:
         # Acciones — usar sector para personalizar
         sector_contextos = {
-            "Bancario": ("el sistema financiero", "resultados del sector bancario", "spread de tasas"),
-            "Energía": ("el sector energético", "precios internacionales del crudo y gas", "tarifas de energía"),
-            "Telecomunicaciones": ("el sector de telecomunicaciones", "penetración de internet y móvil", "ARPU por usuario"),
-            "Materiales": ("el sector de materiales básicos", "precios de commodities", "demanda de China"),
-            "Consumo": ("el sector de consumo masivo", "poder adquisitivo y consumo privado", "ventas minoristas"),
-            "Agro": ("el sector agropecuario", "precios de granos y oleaginosas", "tipo de cambio diferencial"),
+            "Bancario": ("el sistema financiero", "resultados del sistema bancario", "spread de tasas activas/pasivas", "cartera de créditos"),
+            "Energía": ("el sector energético", "precios del crudo y el gas natural", "tarifas de energía eléctrica", "producción de Vaca Muerta"),
+            "Telecomunicaciones": ("el sector de telecomunicaciones", "penetración de banda ancha y móvil", "ARPU trimestral", "inversión en infraestructura 5G"),
+            "Materiales": ("el sector de materiales básicos", "precios de commodities industriales", "demanda de acero y aluminio de China", "cotización del hierro"),
+            "Consumo": ("el sector de consumo masivo", "consumo privado y poder adquisitivo", "ventas minoristas del mes", "índice de confianza del consumidor"),
+            "Agro": ("el sector agropecuario", "precios de granos en el MATBA-ROFEX", "tipo de cambio diferencial agro", "campaña gruesa en curso"),
         }
-        ctx_sector, driver1, driver2 = sector_contextos.get(sector, ("el mercado de capitales", "las condiciones macroeconómicas", "el contexto de tasas"))
+        ctx_sector, driver1, driver2, driver3 = sector_contextos.get(sector, ("el mercado de capitales", "las condiciones macroeconómicas", "el contexto de tasas", "el flujo de inversión extranjera"))
 
         titulos_suba = [
-            f"{nombre} lidera las subas con un avance del {impacto_pct:.1f}%",
-            f"Fuerte demanda en {ticker}: sube {impacto_pct:.1f}% impulsada por {driver1}",
-            f"{ticker} rompe resistencia clave: analistas revisan precio objetivo al alza",
-            f"Rally en {nombre}: {ctx_sector} en foco de los inversores",
-            f"{nombre} ({ticker}): resultados positivos generan impulso comprador",
+            f"Dato clave de {driver1} podría impulsar a {nombre} en las próximas horas",
+            f"Analistas anticipan rally en {ticker} ante mejora en perspectivas de {ctx_sector}",
+            f"{nombre}: publicación de resultados trimestrales podría superar estimaciones",
+            f"Flujo comprador esperado en {ticker} tras señales positivas en {ctx_sector}",
+            f"Acuerdo sectorial potenciaría los márgenes de {nombre} según research local",
         ]
         titulos_baja = [
-            f"{nombre} cede un {impacto_pct:.1f}% ante toma de ganancias sectorial",
-            f"Presión vendedora en {ticker}: {driver1} decepciona al mercado",
-            f"{ticker} rompe soporte técnico clave en jornada de cautela",
-            f"Corrección en {nombre}: {ctx_sector} enfrenta vientos en contra",
-            f"{nombre} ({ticker}): el mercado descuenta perspectivas menos favorables",
+            f"Dato adverso de {driver1} generaría presión sobre {nombre}",
+            f"Analistas advierten sobre riesgo de corrección en {ticker}",
+            f"{nombre}: resultados trimestrales podrían decepcionar al consenso",
+            f"Rotación sectorial amenaza a {ticker}: inversores podrían reducir exposición",
+            f"Perspectivas de {ctx_sector} generan cautela en torno a {nombre}",
         ]
         contenidos_suba = [
-            f"Las acciones de {nombre} ({ticker}) protagonizaron una de las mejores ruedas del panel líder con una suba del {impacto_pct:.1f}%, superando ampliamente el rendimiento del índice Merval. El volumen operado fue superior al promedio de los últimos 20 días, señal de convicción compradora.\n\nEl catalizador principal fue la mejora en las perspectivas de {driver1}, que el mercado interpretó como un driver positivo para los márgenes de la compañía. Analistas de research local revisaron sus modelos de valuación al alza, con nuevos precios objetivo que implican un upside adicional.\n\nDesde el punto de vista técnico, el papel superó la resistencia de las últimas semanas, lo que abre el camino hacia niveles más altos. El efecto sobre el precio podría extenderse durante las próximas {durh:.0f} horas, siempre que el contexto macro no presente sorpresas negativas.",
-            f"Jornada alcista para {nombre} ({ticker}), que avanzó un {impacto_pct:.1f}% en la rueda del BYMA. El papel respondió positivamente a noticias en {ctx_sector}, donde los datos más recientes sugieren una mejora en {driver2}.\n\nLos operadores destacan que la acción venía acumulando presión compradora en las últimas sesiones, y esta rueda actuó como detonante de un movimiento que el análisis técnico anticipaba. La relación precio/valor libro se mantiene en niveles atractivos para el sector.\n\nLa suba podría consolidarse si el flujo externo hacia emergentes se mantiene y el dólar financiero no sufre volatilidad adicional. Se recomienda monitorear el comportamiento en las primeras horas de la próxima rueda.",
+            f"El mercado anticipa con optimismo la publicación del dato de {driver1}, que podría sorprender positivamente al consenso. Analistas locales proyectan que {nombre} ({ticker}) sería uno de los papeles más beneficiados dentro de {ctx_sector} dado su exposición directa a esta variable.\n\nResearch houses locales habrían revisado al alza sus precios objetivo para el papel, citando mejoras en {driver2} que ampliarían los márgenes operativos de la compañía en el próximo trimestre. El consenso anticipa un EPS por encima de las estimaciones previas.\n\nEl movimiento podría materializarse en las próximas {durh:.0f} horas, una vez que el dato se confirme. Inversores con posición en {ticker} deberán monitorear el volumen de operaciones como señal de que hay convicción institucional detrás del movimiento.",
+            f"Señales favorables se acumulan en torno a {nombre} ({ticker}). Fuentes del sector anticipan mejoras en {driver3}, variable que el mercado monitorea de cerca para proyectar la evolución de los ingresos de la compañía en los próximos trimestres.\n\nFondos de inversión locales habrían iniciado posiciones en el papel, anticipando que el catalizador podría detonarse en las próximas horas. La acción venía acumulando presión compradora en las últimas ruedas, con volumen creciente pero precio contenido por resistencia técnica.\n\nSi el dato confirma las expectativas del mercado, la resistencia podría quebrarse y acelerar el movimiento alcista durante las próximas {durh:.0f} horas. Analistas técnicos marcan ${body.precio_objetivo:,.0f} como nivel objetivo de corto plazo.",
         ]
         contenidos_baja = [
-            f"Las acciones de {nombre} ({ticker}) sufrieron una jornada de ventas con una caída del {impacto_pct:.1f}%, siendo uno de los papeles más golpeados del panel líder. El volumen fue elevado, lo que sugiere que la presión no fue meramente técnica.\n\nEl mercado reaccionó negativamente a señales mixtas en {driver1}, que generaron dudas sobre la capacidad de la compañía de sostener sus márgenes en el próximo trimestre. Inversores institucionales aprovecharon la rueda para reducir exposición y rotar hacia sectores defensivos.\n\nTécnicamente, la caída perforó el soporte de corto plazo, lo que podría extender el movimiento bajista durante las próximas {durh:.0f} horas. Los analistas sugieren aguardar señales de estabilización antes de incrementar posiciones en el papel.",
-            f"Rueda negativa para {nombre} ({ticker}), que retrocedió un {impacto_pct:.1f}% en medio de un clima de cautela generalizada en {ctx_sector}. El movimiento estuvo en línea con la debilidad de sus comparables del sector en la región.\n\nEl driver principal de la caída fue la decepción en torno a {driver2}, indicador clave que el mercado monitorea para proyectar la evolución de los ingresos de la compañía. Los fondos de inversión locales registraron rescates netos, lo que amplificó la presión vendedora.\n\nEl contexto macro doméstico suma incertidumbre, con un tipo de cambio que genera ruido sobre los costos operativos del sector. La normalización del precio podría tardar hasta {durh:.0f} horas; se aconseja esperar confirmación de piso antes de sumar posición.",
+            f"Señales de alerta se acumulan en torno a {nombre} ({ticker}). La publicación esperada del dato de {driver1} podría decepcionar al consenso de analistas, generando una reacción vendedora en el papel durante las próximas horas.\n\nFondos institucionales habrían comenzado a reducir su exposición en {ctx_sector} ante la perspectiva de que {driver2} se deteriore más de lo proyectado. Esta rotación hacia sectores defensivos podría amplificarse si el dato confirma las señales negativas.\n\nEl riesgo de corrección podría materializarse en las próximas {durh:.0f} horas. Analistas técnicos señalan que una caída bajo el soporte actual abriría el camino hacia niveles significativamente inferiores, por lo que recomiendan precaución antes de incrementar posición.",
+            f"El mercado anticipa un dato adverso de {driver1} que presionaría a {nombre} ({ticker}) en la próxima rueda. Tres casas de research redujeron sus estimaciones para el sector en las últimas 24 horas, citando deterioro en {driver3} y un contexto macro más desafiante de lo previsto.\n\nInversores institucionales ya habrían iniciado coberturas sobre el papel, anticipando que los resultados trimestrales podrían quedar por debajo del consenso. La relación precio/valor libro actual ofrecería poco margen de seguridad si las estimaciones continúan revisándose a la baja.\n\nEl efecto podría extenderse {durh:.0f} horas, dependiendo de cómo reaccione el contexto macro regional. Se aconseja esperar confirmación del dato antes de tomar decisiones de posición en {ticker}.",
         ]
         titulos = titulos_suba if sube else titulos_baja
         contenidos = contenidos_suba if sube else contenidos_baja
