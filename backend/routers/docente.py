@@ -842,72 +842,139 @@ def generar_noticia_ia(
     _=Depends(get_current_docente)
 ):
     """
-    Llama a Claude para generar título y contenido de una noticia de mercado
-    coherente con el movimiento de precio implícito (precio_actual → precio_objetivo).
-    Calcula automáticamente impacto_pct e impacto_tipo.
-    Requiere variable de entorno ANTHROPIC_API_KEY.
+    Genera título y contenido de una noticia de mercado usando plantillas inteligentes
+    coherentes con el movimiento de precio implícito (precio_actual → precio_objetivo).
+    Calcula automáticamente impacto_pct e impacto_tipo. Sin dependencia de API externa.
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(503, "ANTHROPIC_API_KEY no configurada en el servidor")
-
-    try:
-        import anthropic
-    except ImportError:
-        raise HTTPException(503, "Librería anthropic no instalada. Verificá requirements.txt.")
+    import random
 
     # Calcular impacto
     delta_pct = round((body.precio_objetivo / body.precio_actual - 1) * 100, 2)
     impacto_tipo = "suba" if delta_pct > 0 else "baja"
     impacto_pct = abs(round(delta_pct, 2))
 
-    # Contexto del instrumento
-    activo = body.ticker or body.sector or "el mercado"
-    nombre = body.nombre_instrumento or activo
-    direccion = "alcista" if delta_pct > 0 else "bajista"
+    nombre = body.nombre_instrumento or body.ticker or body.sector or "el activo"
+    ticker = body.ticker or ""
+    sector = body.sector or ""
+    sube = delta_pct > 0
     magnitud = "leve" if impacto_pct < 3 else ("moderada" if impacto_pct < 8 else "significativa")
+    durh = body.duracion_horas or 2.0
 
-    prompt = f"""Sos un analista de mercados financieros argentino. Generá una noticia breve y realista para un simulador universitario de inversión.
+    # Detectar tipo de instrumento por ticker
+    es_bono = ticker in ("AL30","GD30","AL35","AE38","TX26","T2X5")
+    es_cedear = ticker in ("AAPL","GOOGL","AMZN","MSFT","TSLA","BRKB")
+    es_fci = ticker.startswith("FCI")
+    es_accion = not es_bono and not es_cedear and not es_fci
 
-Parámetros:
-- Instrumento: {nombre} ({activo})
-- Precio actual: ${body.precio_actual:,.2f}
-- Precio objetivo: ${body.precio_objetivo:,.2f}
-- Variación esperada: {'+' if delta_pct > 0 else ''}{delta_pct:.1f}%
-- Dirección: {direccion}
-- Magnitud: {magnitud}
-- Duración del efecto: {body.duracion_horas} horas
+    # ── Plantillas por tipo de instrumento y dirección ──────────────────────
+    if es_bono:
+        titulos_suba = [
+            f"{nombre}: TIR comprimida ante expectativas de mejora fiscal",
+            f"Bonos soberanos {ticker} avanzan por señales positivas del FMI",
+            f"{ticker} recupera terreno tras datos favorables de reservas",
+            f"Mejora el perfil de deuda: {nombre} en alza {impacto_pct:.1f}%",
+        ]
+        titulos_baja = [
+            f"{nombre}: presión vendedora ante incertidumbre cambiaria",
+            f"Bonos {ticker} ceden ante ruido político y salida de capitales",
+            f"{ticker} bajo presión: TIR se amplía {impacto_pct:.1f}% en la jornada",
+            f"Toma de ganancias en {nombre} tras semanas de rally",
+        ]
+        contenidos_suba = [
+            f"Los títulos públicos en dólares mostraron una jornada positiva impulsada por datos favorables del sector externo. {nombre} ({ticker}) avanzó un {impacto_pct:.1f}% en el mercado secundario, reflejando mayor apetito por riesgo argentino.\n\nEl contexto internacional colaboró: la baja de tasas de la Fed generó flujo hacia emergentes y los bonos soberanos argentinos se beneficiaron de la compresión de spreads. Los operadores destacan que la paridad del {ticker} sigue siendo atractiva respecto a sus comparables regionales.\n\nEl efecto podría sostenerse durante las próximas {durh:.0f} horas si no hay novedades adversas en el frente cambiario. Se recomienda monitorear el volumen de operaciones en BYMA para confirmar la tendencia.",
+        ]
+        contenidos_baja = [
+            f"Los bonos soberanos sufrieron una jornada de ventas generalizada. {nombre} ({ticker}) retrocedió un {impacto_pct:.1f}%, ampliando su spread y deteriorando la paridad.\n\nEl detonante fue la incertidumbre en torno a las negociaciones con organismos multilaterales y la presión sobre las reservas del BCRA. Los inversores institucionales incrementaron coberturas en instrumentos de menor duration.\n\nEl movimiento podría extenderse en las próximas {durh:.0f} horas. Analistas sugieren aguardar definiciones de política monetaria antes de tomar posiciones en este tramo de la curva soberana.",
+        ]
+        titulos = titulos_suba if sube else titulos_baja
+        contenidos = contenidos_suba if sube else contenidos_baja
 
-Generá exactamente este JSON (sin markdown, sin explicaciones):
-{{
-  "titulo": "<título periodístico, máximo 12 palabras>",
-  "contenido": "<3 párrafos cortos con análisis fundamental o técnico coherente con el movimiento de precio. Mencioná factores plausibles: resultados, macro, sector, contexto argentino. Lenguaje profesional pero accesible para estudiantes universitarios de finanzas.>"
-}}"""
+    elif es_cedear:
+        empresa_map = {"AAPL": "Apple", "GOOGL": "Alphabet/Google", "AMZN": "Amazon", "MSFT": "Microsoft", "TSLA": "Tesla", "BRKB": "Berkshire Hathaway"}
+        empresa = empresa_map.get(ticker, nombre)
+        titulos_suba = [
+            f"CEDEARs de {empresa} suben {impacto_pct:.1f}% tras resultados trimestrales",
+            f"{empresa} ({ticker}): impulso alcista por guidance positivo",
+            f"Wall Street arrastra a {ticker}: sube {impacto_pct:.1f}% en Buenos Aires",
+            f"CEDEARs de {empresa} avanzan por revisión al alza de estimaciones",
+        ]
+        titulos_baja = [
+            f"CEDEARs de {empresa} ceden {impacto_pct:.1f}% ante toma de ganancias",
+            f"{empresa} ({ticker}): corrección técnica tras máximos históricos",
+            f"Presión en {ticker}: resultados por debajo de expectativas del mercado",
+            f"CEDEARs de {empresa} bajo presión cambiaria y datos macro de EE.UU.",
+        ]
+        contenidos_suba = [
+            f"Los CEDEARs de {empresa} ({ticker}) registraron una suba del {impacto_pct:.1f}% en la rueda local, siguiendo la tendencia positiva de Wall Street. El rally estuvo impulsado por resultados corporativos que superaron las estimaciones del consenso de analistas.\n\nEn el mercado estadounidense, el papel avanzó en línea con el sector tecnológico, beneficiado por expectativas de recortes de tasas de la Reserva Federal. La relación precio/ganancia sigue siendo atractiva para inversores de largo plazo.\n\nPara los tenedores de CEDEARs, se suma el factor cambiario: la brecha entre el dólar CCL y el oficial amplifica los retornos en pesos. El movimiento podría sostenerse {durh:.0f} horas más si el mercado americano mantiene el tono positivo.",
+        ]
+        contenidos_baja = [
+            f"Los CEDEARs de {empresa} ({ticker}) cayeron un {impacto_pct:.1f}% en la rueda local, reflejando la debilidad del papel en Wall Street tras datos macro de EE.UU. por debajo de lo esperado.\n\nEl contexto de tasas altas en dólares sigue pesando sobre las valuaciones del sector. Inversores institucionales rotaron hacia sectores defensivos y bonos del Tesoro americano, reduciendo exposición a tecnología y growth.\n\nEn Argentina, el impacto se amplificó por menor liquidez en el mercado de CEDEARs. Se espera que la presión continúe {durh:.0f} horas hasta que haya mayor claridad sobre la próxima decisión de política monetaria de la Fed.",
+        ]
+        titulos = titulos_suba if sube else titulos_baja
+        contenidos = contenidos_suba if sube else contenidos_baja
 
-    try:
-        client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=600,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        raw = message.content[0].text.strip()
+    elif es_fci:
+        titulos_suba = [
+            f"Fondos money market aceleran rendimiento: TNA sube al {impacto_pct + 37:.0f}%",
+            f"{nombre}: el fondo consolida retorno diario positivo",
+        ]
+        titulos_baja = [
+            f"FCI {ticker}: leve ajuste en rendimiento por mayor liquidez del sistema",
+            f"{nombre} ajusta TNA ante baja de tasas de referencia del BCRA",
+        ]
+        contenidos_suba = [
+            f"Los fondos comunes de inversión de renta fija mostraron rendimientos positivos en la jornada. {nombre} ({ticker}) acumuló una suba equivalente a una TNA del {impacto_pct + 37:.0f}%, impulsado por la reinversión de cauciones y letras de corto plazo.\n\nEl contexto de tasas reales positivas en pesos favorece a este tipo de instrumento, que capta flujos desde plazos fijos tradicionales. La liquidez del fondo permitió absorber suscripciones sin deteriorar el rendimiento unitario.\n\nPara inversores conservadores, los FCI money market siguen siendo la alternativa más eficiente para administrar el cash de corto plazo en el contexto inflacionario argentino.",
+        ]
+        contenidos_baja = [
+            f"El fondo {nombre} ({ticker}) registró un ajuste técnico en su rendimiento diario, coherente con la mayor liquidez del sistema financiero tras los vencimientos del Tesoro. La TNA efectiva se ubicó levemente por debajo del promedio de la semana.\n\nEl BCRA mantuvo sin cambios la tasa de política monetaria, pero la mayor oferta de pesos en el mercado secundario comprimió los rendimientos de las letras de cortísimo plazo que componen el portfolio del fondo.\n\nEl movimiento es transitorio y no afecta la estrategia del fondo. Se espera normalización en {durh:.0f} horas, una vez que el mercado absorba el exceso de liquidez.",
+        ]
+        titulos = titulos_suba if sube else titulos_baja
+        contenidos = contenidos_suba if sube else contenidos_baja
 
-        # Parsear JSON de la respuesta
-        import json, re
-        # Extraer JSON si viene envuelto en markdown
-        match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if not match:
-            raise ValueError("Respuesta sin JSON válido")
-        data = json.loads(match.group())
-
-        return {
-            "titulo": data.get("titulo", ""),
-            "contenido": data.get("contenido", ""),
-            "impacto_pct": impacto_pct,
-            "impacto_tipo": impacto_tipo,
-            "delta_pct": delta_pct,
+    else:
+        # Acciones — usar sector para personalizar
+        sector_contextos = {
+            "Bancario": ("el sistema financiero", "resultados del sector bancario", "spread de tasas"),
+            "Energía": ("el sector energético", "precios internacionales del crudo y gas", "tarifas de energía"),
+            "Telecomunicaciones": ("el sector de telecomunicaciones", "penetración de internet y móvil", "ARPU por usuario"),
+            "Materiales": ("el sector de materiales básicos", "precios de commodities", "demanda de China"),
+            "Consumo": ("el sector de consumo masivo", "poder adquisitivo y consumo privado", "ventas minoristas"),
+            "Agro": ("el sector agropecuario", "precios de granos y oleaginosas", "tipo de cambio diferencial"),
         }
+        ctx_sector, driver1, driver2 = sector_contextos.get(sector, ("el mercado de capitales", "las condiciones macroeconómicas", "el contexto de tasas"))
 
-    except Exception as e:
-        raise HTTPException(500, f"Error generando noticia con IA: {str(e)}")
+        titulos_suba = [
+            f"{nombre} lidera las subas con un avance del {impacto_pct:.1f}%",
+            f"Fuerte demanda en {ticker}: sube {impacto_pct:.1f}% impulsada por {driver1}",
+            f"{ticker} rompe resistencia clave: analistas revisan precio objetivo al alza",
+            f"Rally en {nombre}: {ctx_sector} en foco de los inversores",
+            f"{nombre} ({ticker}): resultados positivos generan impulso comprador",
+        ]
+        titulos_baja = [
+            f"{nombre} cede un {impacto_pct:.1f}% ante toma de ganancias sectorial",
+            f"Presión vendedora en {ticker}: {driver1} decepciona al mercado",
+            f"{ticker} rompe soporte técnico clave en jornada de cautela",
+            f"Corrección en {nombre}: {ctx_sector} enfrenta vientos en contra",
+            f"{nombre} ({ticker}): el mercado descuenta perspectivas menos favorables",
+        ]
+        contenidos_suba = [
+            f"Las acciones de {nombre} ({ticker}) protagonizaron una de las mejores ruedas del panel líder con una suba del {impacto_pct:.1f}%, superando ampliamente el rendimiento del índice Merval. El volumen operado fue superior al promedio de los últimos 20 días, señal de convicción compradora.\n\nEl catalizador principal fue la mejora en las perspectivas de {driver1}, que el mercado interpretó como un driver positivo para los márgenes de la compañía. Analistas de research local revisaron sus modelos de valuación al alza, con nuevos precios objetivo que implican un upside adicional.\n\nDesde el punto de vista técnico, el papel superó la resistencia de las últimas semanas, lo que abre el camino hacia niveles más altos. El efecto sobre el precio podría extenderse durante las próximas {durh:.0f} horas, siempre que el contexto macro no presente sorpresas negativas.",
+            f"Jornada alcista para {nombre} ({ticker}), que avanzó un {impacto_pct:.1f}% en la rueda del BYMA. El papel respondió positivamente a noticias en {ctx_sector}, donde los datos más recientes sugieren una mejora en {driver2}.\n\nLos operadores destacan que la acción venía acumulando presión compradora en las últimas sesiones, y esta rueda actuó como detonante de un movimiento que el análisis técnico anticipaba. La relación precio/valor libro se mantiene en niveles atractivos para el sector.\n\nLa suba podría consolidarse si el flujo externo hacia emergentes se mantiene y el dólar financiero no sufre volatilidad adicional. Se recomienda monitorear el comportamiento en las primeras horas de la próxima rueda.",
+        ]
+        contenidos_baja = [
+            f"Las acciones de {nombre} ({ticker}) sufrieron una jornada de ventas con una caída del {impacto_pct:.1f}%, siendo uno de los papeles más golpeados del panel líder. El volumen fue elevado, lo que sugiere que la presión no fue meramente técnica.\n\nEl mercado reaccionó negativamente a señales mixtas en {driver1}, que generaron dudas sobre la capacidad de la compañía de sostener sus márgenes en el próximo trimestre. Inversores institucionales aprovecharon la rueda para reducir exposición y rotar hacia sectores defensivos.\n\nTécnicamente, la caída perforó el soporte de corto plazo, lo que podría extender el movimiento bajista durante las próximas {durh:.0f} horas. Los analistas sugieren aguardar señales de estabilización antes de incrementar posiciones en el papel.",
+            f"Rueda negativa para {nombre} ({ticker}), que retrocedió un {impacto_pct:.1f}% en medio de un clima de cautela generalizada en {ctx_sector}. El movimiento estuvo en línea con la debilidad de sus comparables del sector en la región.\n\nEl driver principal de la caída fue la decepción en torno a {driver2}, indicador clave que el mercado monitorea para proyectar la evolución de los ingresos de la compañía. Los fondos de inversión locales registraron rescates netos, lo que amplificó la presión vendedora.\n\nEl contexto macro doméstico suma incertidumbre, con un tipo de cambio que genera ruido sobre los costos operativos del sector. La normalización del precio podría tardar hasta {durh:.0f} horas; se aconseja esperar confirmación de piso antes de sumar posición.",
+        ]
+        titulos = titulos_suba if sube else titulos_baja
+        contenidos = contenidos_suba if sube else contenidos_baja
+
+    titulo = random.choice(titulos)
+    contenido = random.choice(contenidos)
+
+    return {
+        "titulo": titulo,
+        "contenido": contenido,
+        "impacto_pct": impacto_pct,
+        "impacto_tipo": impacto_tipo,
+        "delta_pct": delta_pct,
+    }
