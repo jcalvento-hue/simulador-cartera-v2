@@ -18,6 +18,22 @@ from perfil_riesgo import PREGUNTAS, calcular_perfil, validar_coherencia
 from indicadores import snapshot as calcular_snapshot
 from models import HistorialPrecios
 
+
+def _noticias_vigentes(db, ahora):
+    """Devuelve las noticias publicadas, activas y no expiradas a la fecha 'ahora'."""
+    from models import Noticia as _N
+    candidatas = (
+        db.query(_N)
+        .filter(_N.publicado_en <= ahora, _N.activa == True)
+        .order_by(_N.publicado_en.desc())
+        .all()
+    )
+    return [
+        n for n in candidatas
+        if n.duracion_horas is None or
+           n.publicado_en + timedelta(hours=n.duracion_horas) >= ahora
+    ]
+
 router = APIRouter(prefix="/api/grupos", tags=["grupos"])
 
 
@@ -372,20 +388,11 @@ def ejecutar_operacion(
     ahora = datetime.utcnow()
 
     # Noticia vigente más reciente (para FK legacy)
-    noticia_vigente = (
-        db.query(Noticia)
-        .filter(Noticia.publicado_en <= ahora, Noticia.activa == True)
-        .order_by(Noticia.publicado_en.desc())
-        .first()
-    )
+    _vigentes = _noticias_vigentes(db, ahora)
+    noticia_vigente = _vigentes[0] if _vigentes else None
 
     # Todas las noticias activas al momento de la operación
-    todas_noticias_activas = (
-        db.query(Noticia)
-        .filter(Noticia.publicado_en <= ahora, Noticia.activa == True)
-        .order_by(Noticia.publicado_en.desc())
-        .all()
-    )
+    todas_noticias_activas = _vigentes
     noticias_activas_snap = [
         {
             "id": n.id,
@@ -580,12 +587,7 @@ def historial_operaciones(db: Session = Depends(get_db), grupo: Grupo = Depends(
 @router.get("/noticias")
 def get_noticias(db: Session = Depends(get_db), grupo: Grupo = Depends(get_current_grupo)):
     ahora = datetime.utcnow()
-    noticias = (
-        db.query(Noticia)
-        .filter(Noticia.publicado_en <= ahora, Noticia.activa == True)
-        .order_by(Noticia.publicado_en.desc())
-        .all()
-    )
+    noticias = _noticias_vigentes(db, ahora)
     leidas = {l.noticia_id for l in db.query(LecturaNoticia).filter(
         LecturaNoticia.grupo_id == grupo.id
     ).all()}
@@ -597,6 +599,8 @@ def get_noticias(db: Session = Depends(get_db), grupo: Grupo = Depends(get_curre
             "tipo": n.tipo,
             "ticker_relacionado": n.ticker_relacionado,
             "publicado_en": n.publicado_en.isoformat(),
+            "duracion_horas": n.duracion_horas,
+            "expira_en": (n.publicado_en + timedelta(hours=n.duracion_horas)).isoformat() if n.duracion_horas else None,
             "leida": n.id in leidas,
         }
         for n in noticias

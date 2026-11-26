@@ -1624,7 +1624,11 @@ function NoticiaCard({ noticia, expanded, onToggle }) {
       {expanded && (
         <div className="noticia-contenido" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{noticia.contenido}</div>
       )}
-      <div className="noticia-meta">{fmtFecha(noticia.publicado_en)} · {expanded ? "▲ Cerrar" : "▼ Leer más"}</div>
+      <div className="noticia-meta">
+        {fmtFecha(noticia.publicado_en)}
+        {noticia.duracion_horas && <span style={{ marginLeft: 6 }}>· ⏱ vence {fmtFecha(noticia.expira_en)}</span>}
+        <span style={{ marginLeft: 6 }}>· {expanded ? "▲ Cerrar" : "▼ Leer más"}</span>
+      </div>
     </div>
   );
 }
@@ -1740,7 +1744,7 @@ function PanelDocente({ token }) {
 
   // Formularios
   const [nuevoGrupo, setNuevoGrupo] = useState("");
-  const [nuevaNoticia, setNuevaNot] = useState({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", publicado_en: "" });
+  const [nuevaNoticia, setNuevaNot] = useState({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", publicado_en: "", duracion_horas: "" });
   const [csvFile, setCsvFile] = useState(null);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
@@ -1947,7 +1951,7 @@ function PanelDocente({ token }) {
   }
 
   async function publicarNoticia() {
-    const { titulo, contenido, tipo, ticker_relacionado, publicado_en } = nuevaNoticia;
+    const { titulo, contenido, tipo, ticker_relacionado, publicado_en, duracion_horas } = nuevaNoticia;
     if (!titulo || !contenido || !publicado_en) {
       flash("error", "Completá título, contenido y fecha de publicación.");
       return;
@@ -1957,9 +1961,10 @@ function PanelDocente({ token }) {
         titulo, contenido, tipo,
         ticker_relacionado: ticker_relacionado || null,
         publicado_en: new Date(publicado_en).toISOString(),
+        duracion_horas: duracion_horas ? parseFloat(duracion_horas) : null,
       }, token);
       flash("success", "Noticia publicada.");
-      setNuevaNot({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", publicado_en: "" });
+      setNuevaNot({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", publicado_en: "", duracion_horas: "" });
       const n = await api("GET", "/api/docente/noticias", null, token);
       setNoticias(n);
     } catch (e) { flash("error", e.message); }
@@ -2367,6 +2372,13 @@ function PanelDocente({ token }) {
                 value={nuevaNoticia.publicado_en}
                 onChange={e => setNuevaNot(p => ({ ...p, publicado_en: e.target.value }))} />
             </div>
+            <div className="form-group">
+              <label className="form-label">Duración del efecto (horas, opcional)</label>
+              <input type="number" min="0.5" step="0.5"
+                value={nuevaNoticia.duracion_horas}
+                onChange={e => setNuevaNot(p => ({ ...p, duracion_horas: e.target.value }))}
+                placeholder="Ej: 24 — dejar vacío para sin vencimiento" />
+            </div>
             <button className="btn btn-primary" onClick={publicarNoticia}>Publicar</button>
           </div>
 
@@ -2389,7 +2401,15 @@ function PanelDocente({ token }) {
                     </span>
                     {n.ticker_relacionado && <span style={{ marginLeft: 6, background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>{n.ticker_relacionado}</span>}
                     <div style={{ fontWeight: 600, marginTop: 4 }}>{n.titulo}</div>
-                    <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>{fmtFecha(n.publicado_en)} · {n.lecturas} lecturas</div>
+                    <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>
+                      {fmtFecha(n.publicado_en)}
+                      {n.duracion_horas && <span style={{ marginLeft: 6 }}>· ⏱ {n.duracion_horas}h</span>}
+                      {n.expira_en && <span style={{ marginLeft: 4, color: n.vigente ? "#d97706" : "#9ca3af" }}>
+                        {n.vigente ? `expira ${fmtFecha(n.expira_en)}` : "⛔ expirada"}
+                      </span>}
+                      <span style={{ marginLeft: 6 }}>· {n.lecturas} lecturas</span>
+                      {!n.vigente && n.activa && <span style={{ marginLeft: 6, background: "#f3f4f6", color: "#6b7280", fontSize: 10, padding: "1px 5px", borderRadius: 3 }}>INACTIVA</span>}
+                    </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, marginLeft: 12 }}>
                     <button className="btn btn-outline btn-sm" onClick={() => verReporteNoticia(n.id)}>Ver reporte</button>

@@ -149,6 +149,7 @@ class Noticia(Base):
     tipo = Column(String(30), default="fundamental")   # fundamental / tecnico
     ticker_relacionado = Column(String(20), nullable=True)  # instrumento al que refiere
     publicado_en = Column(DateTime, nullable=False)    # cuándo se hace visible a los grupos
+    duracion_horas = Column(Float, nullable=True)      # horas activa; None = sin vencimiento
     creado_en = Column(DateTime, default=datetime.utcnow)
     activa = Column(Boolean, default=True)
 
@@ -258,6 +259,7 @@ def init_db():
         "ALTER TABLE operaciones ADD COLUMN justificacion TEXT",
         "ALTER TABLE operaciones ADD COLUMN snapshot_indicadores JSON",
         "ALTER TABLE operaciones ADD COLUMN noticias_activas JSON",
+        "ALTER TABLE noticias ADD COLUMN duracion_horas FLOAT",
     ]
     with engine.connect() as conn:
         for sql in migrations:

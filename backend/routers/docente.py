@@ -193,17 +193,26 @@ class NoticiaIn(BaseModel):
     tipo: str = "fundamental"           # fundamental / tecnico
     ticker_relacionado: Optional[str] = None
     publicado_en: datetime              # ISO string desde el frontend
+    duracion_horas: Optional[float] = None  # None = sin vencimiento
 
 
 @router.get("/noticias")
 def listar_noticias(db: Session = Depends(get_db), _=Depends(get_current_docente)):
+    from datetime import timedelta
+    ahora = datetime.utcnow()
     noticias = db.query(Noticia).order_by(Noticia.publicado_en).all()
     return [
         {
             "id": n.id, "titulo": n.titulo, "tipo": n.tipo,
             "ticker_relacionado": n.ticker_relacionado,
             "publicado_en": n.publicado_en.isoformat(),
+            "duracion_horas": n.duracion_horas,
+            "expira_en": (n.publicado_en + timedelta(hours=n.duracion_horas)).isoformat() if n.duracion_horas else None,
             "activa": n.activa,
+            "vigente": n.activa and n.publicado_en <= ahora and (
+                n.duracion_horas is None or
+                n.publicado_en + timedelta(hours=n.duracion_horas) >= ahora
+            ),
             "lecturas": len(n.lecturas),
         }
         for n in noticias
