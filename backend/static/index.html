@@ -2363,23 +2363,21 @@ function PanelDocente({ token }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group">
                 <label className="form-label">Ticker relacionado (opcional)</label>
-                <input value={nuevaNoticia.ticker_relacionado}
-                  onChange={e => setNuevaNot(p => ({ ...p, ticker_relacionado: e.target.value.toUpperCase(), sector_relacionado: "" }))}
-                  placeholder="Ej: GGAL"
-                  list="datalist-tickers" />
-                <datalist id="datalist-tickers">
-                  {instrumentos.map(i => <option key={i.ticker} value={i.ticker}>{i.nombre}</option>)}
-                </datalist>
+                <select
+                  value={nuevaNoticia.ticker_relacionado}
+                  onChange={e => setNuevaNot(p => ({ ...p, ticker_relacionado: e.target.value, sector_relacionado: "" }))}>
+                  <option value="">— ninguno —</option>
+                  {instrumentos.map(i => <option key={i.ticker} value={i.ticker}>{i.ticker} · {i.nombre}</option>)}
+                </select>
               </div>
               <div className="form-group">
                 <label className="form-label">— o — Sector relacionado</label>
-                <input value={nuevaNoticia.sector_relacionado}
-                  onChange={e => setNuevaNot(p => ({ ...p, sector_relacionado: e.target.value, ticker_relacionado: "" }))}
-                  placeholder="Ej: Financiero, Energía"
-                  list="datalist-sectores" />
-                <datalist id="datalist-sectores">
-                  {[...new Set(instrumentos.map(i => i.sector).filter(Boolean))].sort().map(s => <option key={s} value={s} />)}
-                </datalist>
+                <select
+                  value={nuevaNoticia.sector_relacionado}
+                  onChange={e => setNuevaNot(p => ({ ...p, sector_relacionado: e.target.value, ticker_relacionado: "" }))}>
+                  <option value="">— ninguno —</option>
+                  {[...new Set(instrumentos.map(i => i.sector).filter(Boolean))].sort().map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
             </div>
             <div className="form-group">
