@@ -10,8 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 
-from models import init_db
-from market import random_walk_loop
+from models import init_db, SessionLocal, HistorialPrecios
+from market import random_walk_loop, generar_historial_inicial
 from routers import auth, docente, grupos
 
 
@@ -19,6 +19,17 @@ from routers import auth, docente, grupos
 async def lifespan(app: FastAPI):
     # Inicializar DB y datos seed
     init_db()
+    # Generar historial inicial si la DB no tiene puntos
+    # (ocurre en cada nuevo deploy en Render, que tiene disco efímero)
+    db = SessionLocal()
+    try:
+        tiene_historial = db.query(HistorialPrecios).first() is not None
+    finally:
+        db.close()
+    if not tiene_historial:
+        print("[startup] DB sin historial — generando historial GBM inicial...", flush=True)
+        generar_historial_inicial()
+        print("[startup] Historial inicial generado.", flush=True)
     # Lanzar el loop del mercado en background
     task = asyncio.create_task(random_walk_loop())
     yield

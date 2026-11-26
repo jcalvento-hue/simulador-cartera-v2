@@ -912,8 +912,12 @@ function Operar({ token, perfil }) {
   const [justificacion, setJustificacion] = useState("");
   const [historial, setHistorial] = useState([]);
   const [historialKey, setHistorialKey] = useState(0);
+  const [periodo, setPeriodo] = useState("sesion");
+  const [chartZoom, setChartZoom] = useState(false);
   const chartRef = useRef(null);
   const chartInstanceRef = useRef(null);
+  const chartZoomRef = useRef(null);
+  const chartZoomInstanceRef = useRef(null);
 
   const cargarMercado = useCallback(async () => {
     try {
@@ -926,26 +930,33 @@ function Operar({ token, perfil }) {
 
   useEffect(() => { cargarMercado(); const id = setInterval(cargarMercado, 15000); return () => clearInterval(id); }, [cargarMercado]);
 
-  // Cargar historial al seleccionar instrumento o cuando se actualizan precios
+  // Cargar historial al seleccionar instrumento, cambiar período o cuando se actualizan precios
   useEffect(() => {
     if (!seleccionado) { setHistorial([]); return; }
-    api("GET", `/api/grupos/mercado/${seleccionado.ticker}/historial`, null, token)
+    api("GET", `/api/grupos/mercado/${seleccionado.ticker}/historial?periodo=${periodo}`, null, token)
       .then(d => {
         // API devuelve {ticker, precios: [{t, p}]} — normalizar a {timestamp, precio}
         const pts = (d.precios || []).map(x => ({ timestamp: x.t, precio: x.p }));
         setHistorial(pts);
       })
       .catch(() => setHistorial([]));
-  }, [seleccionado?.id, historialKey]);
+  }, [seleccionado?.id, historialKey, periodo]);
+
+  // Formatear label del eje X según el período
+  function fmtLabel(isoStr, per) {
+    const d = new Date(isoStr + "Z");
+    if (per === "sesion") return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+    if (per === "1s") return d.toLocaleDateString("es-AR", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+    if (per === "1m") return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "2-digit" });
+    if (per === "1a") return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "2-digit" });
+    return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short" });
+  }
 
   // Dibujar/actualizar gráfico cuando cambia el historial
   useEffect(() => {
     if (!chartRef.current || historial.length === 0) return;
     if (chartInstanceRef.current) chartInstanceRef.current.destroy();
-    const labels = historial.map(h => {
-      const d = new Date(h.timestamp);
-      return d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
-    });
+    const labels = historial.map(h => fmtLabel(h.timestamp, periodo));
     const datos = historial.map(h => h.precio);
     const primero = datos[0];
     const ultimo = datos[datos.length - 1];
@@ -971,13 +982,231 @@ function Operar({ token, perfil }) {
           callbacks: { label: ctx => `$${ctx.parsed.y.toFixed(2)}` }
         }},
         scales: {
-          x: { ticks: { maxTicksLimit: 4, font: { size: 10 } }, grid: { display: false } },
+          x: { ticks: { maxTicksLimit: periodo === "1a" ? 6 : 4, font: { size: 10 } }, grid: { display: false } },
           y: { ticks: { font: { size: 10 }, callback: v => `$${v.toFixed(0)}` }, grid: { color: "#e5e7eb" } }
         }
       }
     });
     return () => { if (chartInstanceRef.current) chartInstanceRef.current.destroy(); };
-  }, [historial]);
+  }, [historial, periodo]);
+
+  // ── Indicadores técnicos ──────────────────────────────────────────────────
+  const [indicadores, setIndicadores] = useState({ ema10: false, ema: false, ema50: false, bb: false, rsi: false, macd: false });
+  const chartRsiRef = useRef(null);
+  const chartRsiInstanceRef = useRef(null);
+  const chartMacdRef = useRef(null);
+  const chartMacdInstanceRef = useRef(null);
+
+  function toggleIndicador(ind) {
+    setIndicadores(prev => ({ ...prev, [ind]: !prev[ind] }));
+  }
+
+  // Cálculos de indicadores sobre array de precios
+  function calcEMA(precios, periodo) {
+    const k = 2 / (periodo + 1);
+    const ema = [precios[0]];
+    for (let i = 1; i < precios.length; i++)
+      ema.push(precios[i] * k + ema[i - 1] * (1 - k));
+    // Primeros (periodo-1) puntos son cálidos pero inexactos — devolver null para no graficar
+    return ema.map((v, i) => i < periodo - 1 ? null : v);
+  }
+
+  function calcBB(precios, n = 20) {
+    const upper = [], lower = [], mid = [];
+    for (let i = 0; i < precios.length; i++) {
+      if (i < n - 1) { upper.push(null); lower.push(null); mid.push(null); continue; }
+      const slice = precios.slice(i - n + 1, i + 1);
+      const mean = slice.reduce((a, b) => a + b, 0) / n;
+      const std = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+      mid.push(mean);
+      upper.push(mean + 2 * std);
+      lower.push(mean - 2 * std);
+    }
+    return { upper, lower, mid };
+  }
+
+  function calcRSI(precios, n = 14) {
+    const rsi = new Array(precios.length).fill(null);
+    if (precios.length < n + 1) return rsi;
+    let avgGain = 0, avgLoss = 0;
+    for (let i = 1; i <= n; i++) {
+      const d = precios[i] - precios[i - 1];
+      if (d > 0) avgGain += d; else avgLoss += Math.abs(d);
+    }
+    avgGain /= n; avgLoss /= n;
+    rsi[n] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    for (let i = n + 1; i < precios.length; i++) {
+      const d = precios[i] - precios[i - 1];
+      const gain = d > 0 ? d : 0, loss = d < 0 ? Math.abs(d) : 0;
+      avgGain = (avgGain * (n - 1) + gain) / n;
+      avgLoss = (avgLoss * (n - 1) + loss) / n;
+      rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    }
+    return rsi;
+  }
+
+  function calcMACD(precios) {
+    const ema12 = calcEMA(precios, 12).map((v, i) => v ?? null);
+    const ema26 = calcEMA(precios, 26).map((v, i) => v ?? null);
+    const macdLine = ema12.map((v, i) => (v !== null && ema26[i] !== null) ? v - ema26[i] : null);
+    // Signal: EMA 9 del macd (solo donde macd no es null)
+    const filled = macdLine.filter(v => v !== null);
+    const signalFilled = calcEMA(filled, 9);
+    const signal = new Array(macdLine.length).fill(null);
+    let idx = 0;
+    for (let i = 0; i < macdLine.length; i++) {
+      if (macdLine[i] !== null) { signal[i] = signalFilled[idx++]; }
+    }
+    const histo = macdLine.map((v, i) => (v !== null && signal[i] !== null) ? v - signal[i] : null);
+    return { macdLine, signal, histo };
+  }
+
+  // Dibujar chart del modal zoom + subgráficos de indicadores
+  useEffect(() => {
+    if (!chartZoom || !chartZoomRef.current || historial.length === 0) return;
+    if (chartZoomInstanceRef.current) chartZoomInstanceRef.current.destroy();
+    if (chartRsiInstanceRef.current) chartRsiInstanceRef.current.destroy();
+    if (chartMacdInstanceRef.current) chartMacdInstanceRef.current.destroy();
+
+    const labels = historial.map(h => fmtLabel(h.timestamp, periodo));
+    const datos = historial.map(h => h.precio);
+    const primero = datos[0], ultimo = datos[datos.length - 1];
+    const colorPrecio = ultimo >= primero ? "#16a34a" : "#dc2626";
+
+    // Datasets principales
+    const datasets = [{
+      label: "Precio",
+      data: datos,
+      borderColor: colorPrecio,
+      backgroundColor: colorPrecio + "12",
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.3,
+      yAxisID: "y",
+      order: 10,
+    }];
+
+    if (indicadores.ema10) {
+      datasets.push({
+        label: "EMA 10", data: calcEMA(datos, 10),
+        borderColor: "#10b981", borderWidth: 1.5, pointRadius: 0,
+        fill: false, tension: 0.3, yAxisID: "y", order: 5,
+      });
+    }
+
+    if (indicadores.ema) {
+      datasets.push({
+        label: "EMA 20", data: calcEMA(datos, 20),
+        borderColor: "#f59e0b", borderWidth: 1.5, pointRadius: 0,
+        fill: false, tension: 0.3, yAxisID: "y", order: 5,
+      });
+    }
+
+    if (indicadores.ema50) {
+      datasets.push({
+        label: "EMA 50", data: calcEMA(datos, 50),
+        borderColor: "#ef4444", borderWidth: 1.5, pointRadius: 0,
+        fill: false, tension: 0.3, yAxisID: "y", order: 5,
+      });
+    }
+
+    if (indicadores.bb) {
+      const bb = calcBB(datos, 20);
+      datasets.push(
+        { label: "BB Superior", data: bb.upper, borderColor: "#6366f1", borderWidth: 1, borderDash: [4,2], pointRadius: 0, fill: false, tension: 0.3, yAxisID: "y", order: 4 },
+        { label: "BB Media",    data: bb.mid,   borderColor: "#6366f1", borderWidth: 1, pointRadius: 0, fill: false, tension: 0.3, yAxisID: "y", order: 4 },
+        { label: "BB Inferior", data: bb.lower, borderColor: "#6366f1", borderWidth: 1, borderDash: [4,2], pointRadius: 0, fill: false, tension: 0.3, yAxisID: "y", order: 4 }
+      );
+    }
+
+    chartZoomInstanceRef.current = new Chart(chartZoomRef.current, {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: indicadores.ema || indicadores.bb, position: "top", labels: { font: { size: 11 }, boxWidth: 16 } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y?.toFixed(2) ?? ""}` } }
+        },
+        scales: {
+          x: { ticks: { maxTicksLimit: 8, font: { size: 11 } }, grid: { display: false } },
+          y: { ticks: { font: { size: 11 }, callback: v => `$${v.toFixed(0)}` }, grid: { color: "#e5e7eb" } }
+        }
+      }
+    });
+
+    // Subgráfico RSI
+    if (indicadores.rsi && chartRsiRef.current) {
+      const rsiData = calcRSI(datos, 14);
+      chartRsiInstanceRef.current = new Chart(chartRsiRef.current, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{ label: "RSI 14", data: rsiData, borderColor: "#8b5cf6", borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.3 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `RSI: ${ctx.parsed.y?.toFixed(1) ?? ""}` } } },
+          scales: {
+            x: { ticks: { display: false }, grid: { display: false } },
+            y: { min: 0, max: 100, ticks: { font: { size: 10 }, callback: v => v },
+              grid: { color: "#e5e7eb" },
+              afterDraw: chart => {
+                // Líneas de sobrecompra/sobreventa
+                const ctx2 = chart.ctx;
+                [30, 70].forEach(val => {
+                  const y = chart.scales.y.getPixelForValue(val);
+                  ctx2.save();
+                  ctx2.strokeStyle = val === 70 ? "#dc2626" : "#16a34a";
+                  ctx2.lineWidth = 1;
+                  ctx2.setLineDash([4, 3]);
+                  ctx2.beginPath();
+                  ctx2.moveTo(chart.chartArea.left, y);
+                  ctx2.lineTo(chart.chartArea.right, y);
+                  ctx2.stroke();
+                  ctx2.restore();
+                });
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Subgráfico MACD
+    if (indicadores.macd && chartMacdRef.current) {
+      const { macdLine, signal, histo } = calcMACD(datos);
+      chartMacdInstanceRef.current = new Chart(chartMacdRef.current, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            { type: "bar",  label: "Histograma", data: histo,    backgroundColor: histo.map(v => v === null ? "transparent" : v >= 0 ? "#16a34a66" : "#dc262666"), borderWidth: 0, order: 2 },
+            { type: "line", label: "MACD",       data: macdLine, borderColor: "#2563eb", borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.3, order: 1 },
+            { type: "line", label: "Señal",      data: signal,   borderColor: "#f59e0b", borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.3, order: 1 },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: true, position: "top", labels: { font: { size: 10 }, boxWidth: 14 } },
+            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2) ?? ""}` } }
+          },
+          scales: {
+            x: { ticks: { display: false }, grid: { display: false } },
+            y: { ticks: { font: { size: 10 } }, grid: { color: "#e5e7eb" } }
+          }
+        }
+      });
+    }
+
+    return () => {
+      if (chartZoomInstanceRef.current) chartZoomInstanceRef.current.destroy();
+      if (chartRsiInstanceRef.current) chartRsiInstanceRef.current.destroy();
+      if (chartMacdInstanceRef.current) chartMacdInstanceRef.current.destroy();
+    };
+  }, [chartZoom, historial, periodo, indicadores]);
 
   async function verPreview() {
     if (!seleccionado || !cantidad || parseInt(cantidad) <= 0) return;
@@ -1101,12 +1330,129 @@ function Operar({ token, perfil }) {
             <span style={{ fontSize: 13, marginLeft: 8 }} className={seleccionado.variacion_sesion_pct >= 0 ? "pos" : "neg"}>{fmtPct(seleccionado.variacion_sesion_pct)}</span>
           </div>
           {/* Gráfico de cotización */}
-          <div style={{ height: 110, position: "relative" }}>
-            {historial.length > 1
-              ? <canvas ref={chartRef} />
-              : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--gris)" }}>Cargando historial...</div>
-            }
+          <div>
+            {/* Botones de período */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+              {[
+                { key: "sesion", label: "Hoy" },
+                { key: "1s",     label: "1S"  },
+                { key: "1m",     label: "1M"  },
+                { key: "1a",     label: "1A"  },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setPeriodo(key)}
+                  style={{
+                    padding: "2px 8px",
+                    fontSize: 11,
+                    fontWeight: periodo === key ? 700 : 400,
+                    border: `1px solid ${periodo === key ? "var(--azul)" : "#d1d5db"}`,
+                    borderRadius: 4,
+                    background: periodo === key ? "var(--azul)" : "transparent",
+                    color: periodo === key ? "#fff" : "var(--gris)",
+                    cursor: "pointer",
+                    lineHeight: 1.6,
+                  }}
+                >{label}</button>
+              ))}
+            </div>
+            <div style={{ height: 110, position: "relative", cursor: historial.length > 1 ? "zoom-in" : "default" }}
+                 onClick={() => historial.length > 1 && setChartZoom(true)}
+                 title="Click para ampliar">
+              {historial.length > 1
+                ? <canvas ref={chartRef} />
+                : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--gris)" }}>Cargando historial...</div>
+              }
+            </div>
           </div>
+
+          {/* Modal zoom del gráfico con indicadores técnicos */}
+          {chartZoom && (
+            <div style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+              zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center",
+            }} onClick={() => setChartZoom(false)}>
+              <div style={{
+                background: "#fff", borderRadius: 12, padding: 20,
+                width: "min(96vw, 820px)", maxHeight: "92vh", overflowY: "auto",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+              }} onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 700, fontSize: 16 }}>{seleccionado.ticker}</span>
+                    <span style={{ fontSize: 13, color: "var(--gris)" }}>{seleccionado.nombre}</span>
+                    <span style={{ fontSize: 16, fontWeight: 700 }}>{fmt(seleccionado.precio_actual)}</span>
+                    <span style={{ fontSize: 13 }} className={seleccionado.variacion_sesion_pct >= 0 ? "pos" : "neg"}>{fmtPct(seleccionado.variacion_sesion_pct)}</span>
+                  </div>
+                  <button onClick={() => setChartZoom(false)}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "var(--gris)", lineHeight: 1, flexShrink: 0 }}>✕</button>
+                </div>
+
+                {/* Controles: período */}
+                <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
+                  {[{ key: "sesion", label: "Hoy" }, { key: "1s", label: "1S" }, { key: "1m", label: "1M" }, { key: "1a", label: "1A" }].map(({ key, label }) => (
+                    <button key={key} onClick={() => setPeriodo(key)} style={{
+                      padding: "3px 10px", fontSize: 12, fontWeight: periodo === key ? 700 : 400,
+                      border: `1px solid ${periodo === key ? "var(--azul)" : "#d1d5db"}`,
+                      borderRadius: 4, background: periodo === key ? "var(--azul)" : "transparent",
+                      color: periodo === key ? "#fff" : "var(--gris)", cursor: "pointer",
+                    }}>{label}</button>
+                  ))}
+                </div>
+                {/* Indicadores técnicos */}
+                <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "var(--gris)", marginRight: 2 }}>Indicadores:</span>
+                  {[
+                    { key: "ema10", label: "EMA 10",   color: "#10b981" },
+                    { key: "ema",   label: "EMA 20",   color: "#f59e0b" },
+                    { key: "ema50", label: "EMA 50",   color: "#ef4444" },
+                    { key: "bb",    label: "Bollinger", color: "#6366f1" },
+                    { key: "rsi",   label: "RSI 14",    color: "#8b5cf6" },
+                    { key: "macd",  label: "MACD",      color: "#2563eb" },
+                  ].map(({ key, label, color }) => (
+                    <button key={key} onClick={() => toggleIndicador(key)} style={{
+                      padding: "3px 10px", fontSize: 12, fontWeight: indicadores[key] ? 700 : 400,
+                      border: `1px solid ${indicadores[key] ? color : "#d1d5db"}`,
+                      borderRadius: 4,
+                      background: indicadores[key] ? color + "22" : "transparent",
+                      color: indicadores[key] ? color : "var(--gris)",
+                      cursor: "pointer",
+                    }}>{label}</button>
+                  ))}
+                </div>
+
+                {/* Gráfico principal */}
+                <div style={{ height: 260, position: "relative" }}>
+                  <canvas ref={chartZoomRef} />
+                </div>
+
+                {/* Subgráfico RSI */}
+                {indicadores.rsi && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, color: "#8b5cf6", fontWeight: 600, marginBottom: 2 }}>
+                      RSI 14 — <span style={{ color: "#dc2626" }}>sobrecompra &gt;70</span> · <span style={{ color: "#16a34a" }}>sobreventa &lt;30</span>
+                    </div>
+                    <div style={{ height: 90, position: "relative" }}>
+                      <canvas ref={chartRsiRef} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Subgráfico MACD */}
+                {indicadores.macd && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, color: "#2563eb", fontWeight: 600, marginBottom: 2 }}>
+                      MACD (12,26,9) — cruce MACD↑Señal = señal alcista · MACD↓Señal = señal bajista
+                    </div>
+                    <div style={{ height: 90, position: "relative" }}>
+                      <canvas ref={chartMacdRef} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 6 }}>
             <button className={`btn btn-sm ${tipo === "compra" ? "btn-success" : "btn-outline"}`} style={{ flex: 1 }} onClick={() => setTipo("compra")}>Compra</button>
             <button className={`btn btn-sm ${tipo === "venta" ? "btn-danger" : "btn-outline"}`} style={{ flex: 1 }} onClick={() => setTipo("venta")}>Venta</button>
@@ -1272,13 +1618,23 @@ function NoticiaCard({ noticia, expanded, onToggle }) {
     >
       <div className="noticia-tipo" style={{ color: tipoColor }}>{tipoLabel}
         {noticia.ticker_relacionado && <span style={{ marginLeft: 8, background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontSize: 10 }}>{noticia.ticker_relacionado}</span>}
+        {noticia.sector_relacionado && <span style={{ marginLeft: 6, background: "#ede9fe", color: "#7c3aed", padding: "1px 6px", borderRadius: 4, fontSize: 10 }}>{noticia.sector_relacionado}</span>}
+        {noticia.impacto_pct && noticia.impacto_tipo && (
+          <span style={{ marginLeft: 6, background: noticia.impacto_tipo === "suba" ? "#dcfce7" : "#fee2e2", color: noticia.impacto_tipo === "suba" ? "#166534" : "#991b1b", padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
+            {noticia.impacto_tipo === "suba" ? "▲" : "▼"} {noticia.impacto_pct}% short-term
+          </span>
+        )}
         {!noticia.leida && <span style={{ marginLeft: 8, background: "var(--azul)", color: "white", padding: "1px 6px", borderRadius: 4, fontSize: 10 }}>NUEVO</span>}
       </div>
       <div className="noticia-titulo">{noticia.titulo}</div>
       {expanded && (
         <div className="noticia-contenido" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{noticia.contenido}</div>
       )}
-      <div className="noticia-meta">{fmtFecha(noticia.publicado_en)} · {expanded ? "▲ Cerrar" : "▼ Leer más"}</div>
+      <div className="noticia-meta">
+        {fmtFecha(noticia.publicado_en)}
+        {noticia.duracion_horas && <span style={{ marginLeft: 6 }}>· ⏱ vence {fmtFecha(noticia.expira_en)}</span>}
+        <span style={{ marginLeft: 6 }}>· {expanded ? "▲ Cerrar" : "▼ Leer más"}</span>
+      </div>
     </div>
   );
 }
@@ -1394,7 +1750,7 @@ function PanelDocente({ token }) {
 
   // Formularios
   const [nuevoGrupo, setNuevoGrupo] = useState("");
-  const [nuevaNoticia, setNuevaNot] = useState({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", publicado_en: "" });
+  const [nuevaNoticia, setNuevaNot] = useState({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", sector_relacionado: "", publicado_en: "", duracion_horas: "", impacto_pct: "", impacto_tipo: "suba" });
   const [csvFile, setCsvFile] = useState(null);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
@@ -1601,19 +1957,27 @@ function PanelDocente({ token }) {
   }
 
   async function publicarNoticia() {
-    const { titulo, contenido, tipo, ticker_relacionado, publicado_en } = nuevaNoticia;
+    const { titulo, contenido, tipo, ticker_relacionado, sector_relacionado, publicado_en, duracion_horas, impacto_pct, impacto_tipo } = nuevaNoticia;
     if (!titulo || !contenido || !publicado_en) {
       flash("error", "Completá título, contenido y fecha de publicación.");
+      return;
+    }
+    if (impacto_pct && !duracion_horas) {
+      flash("error", "Si hay impacto en precio, especificá la duración del efecto.");
       return;
     }
     try {
       await api("POST", "/api/docente/noticias", {
         titulo, contenido, tipo,
         ticker_relacionado: ticker_relacionado || null,
+        sector_relacionado: sector_relacionado || null,
         publicado_en: new Date(publicado_en).toISOString(),
+        duracion_horas: duracion_horas ? parseFloat(duracion_horas) : null,
+        impacto_pct: impacto_pct ? parseFloat(impacto_pct) : null,
+        impacto_tipo: impacto_pct ? impacto_tipo : null,
       }, token);
       flash("success", "Noticia publicada.");
-      setNuevaNot({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", publicado_en: "" });
+      setNuevaNot({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", sector_relacionado: "", publicado_en: "", duracion_horas: "", impacto_pct: "", impacto_tipo: "suba" });
       const n = await api("GET", "/api/docente/noticias", null, token);
       setNoticias(n);
     } catch (e) { flash("error", e.message); }
@@ -1996,11 +2360,27 @@ function PanelDocente({ token }) {
                 <option value="tecnico">Análisis técnico</option>
               </select>
             </div>
-            <div className="form-group">
-              <label className="form-label">Ticker relacionado (opcional)</label>
-              <input value={nuevaNoticia.ticker_relacionado}
-                onChange={e => setNuevaNot(p => ({ ...p, ticker_relacionado: e.target.value.toUpperCase() }))}
-                placeholder="Ej: GGAL" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="form-group">
+                <label className="form-label">Ticker relacionado (opcional)</label>
+                <input value={nuevaNoticia.ticker_relacionado}
+                  onChange={e => setNuevaNot(p => ({ ...p, ticker_relacionado: e.target.value.toUpperCase(), sector_relacionado: "" }))}
+                  placeholder="Ej: GGAL"
+                  list="datalist-tickers" />
+                <datalist id="datalist-tickers">
+                  {instrumentos.map(i => <option key={i.ticker} value={i.ticker}>{i.nombre}</option>)}
+                </datalist>
+              </div>
+              <div className="form-group">
+                <label className="form-label">— o — Sector relacionado</label>
+                <input value={nuevaNoticia.sector_relacionado}
+                  onChange={e => setNuevaNot(p => ({ ...p, sector_relacionado: e.target.value, ticker_relacionado: "" }))}
+                  placeholder="Ej: Financiero, Energía"
+                  list="datalist-sectores" />
+                <datalist id="datalist-sectores">
+                  {[...new Set(instrumentos.map(i => i.sector).filter(Boolean))].sort().map(s => <option key={s} value={s} />)}
+                </datalist>
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Título</label>
@@ -2013,13 +2393,54 @@ function PanelDocente({ token }) {
               <textarea value={nuevaNoticia.contenido}
                 onChange={e => setNuevaNot(p => ({ ...p, contenido: e.target.value }))}
                 placeholder="Contenido de la noticia o análisis..."
-                rows={5} />
+                rows={4} />
             </div>
-            <div className="form-group">
-              <label className="form-label">Fecha y hora de publicación</label>
-              <input type="datetime-local"
-                value={nuevaNoticia.publicado_en}
-                onChange={e => setNuevaNot(p => ({ ...p, publicado_en: e.target.value }))} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="form-group">
+                <label className="form-label">Fecha y hora de publicación</label>
+                <input type="datetime-local"
+                  value={nuevaNoticia.publicado_en}
+                  onChange={e => setNuevaNot(p => ({ ...p, publicado_en: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Duración del efecto (horas)</label>
+                <input type="number" min="0.5" step="0.5"
+                  value={nuevaNoticia.duracion_horas}
+                  onChange={e => setNuevaNot(p => ({ ...p, duracion_horas: e.target.value }))}
+                  placeholder="Ej: 24 — vacío = sin vencimiento" />
+              </div>
+            </div>
+            <div style={{ background: "var(--fondo)", borderRadius: 8, padding: "12px 14px", marginBottom: 12, border: "1px solid var(--borde)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--texto-secundario)", marginBottom: 8 }}>
+                📈 Efecto real sobre precio (opcional)
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Magnitud del impacto (%)</label>
+                  <input type="number" min="0.1" max="30" step="0.1"
+                    value={nuevaNoticia.impacto_pct}
+                    onChange={e => setNuevaNot(p => ({ ...p, impacto_pct: e.target.value }))}
+                    placeholder="Ej: 5 = 5% de movimiento" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Tipo de movimiento</label>
+                  <select value={nuevaNoticia.impacto_tipo}
+                    onChange={e => setNuevaNot(p => ({ ...p, impacto_tipo: e.target.value }))}>
+                    <option value="suba">📈 Suba</option>
+                    <option value="baja">📉 Baja</option>
+                  </select>
+                </div>
+              </div>
+              {nuevaNoticia.impacto_pct && !nuevaNoticia.duracion_horas && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "var(--rojo)" }}>
+                  ⚠ Con impacto en precio, la duración es obligatoria.
+                </div>
+              )}
+              {nuevaNoticia.impacto_pct && nuevaNoticia.duracion_horas && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "var(--verde)" }}>
+                  ✓ Shock inicial + decay durante {nuevaNoticia.duracion_horas}h · {nuevaNoticia.impacto_tipo === "suba" ? "+" : "-"}{nuevaNoticia.impacto_pct}% sobre {nuevaNoticia.ticker_relacionado || nuevaNoticia.sector_relacionado || "todos los activos"}
+                </div>
+              )}
             </div>
             <button className="btn btn-primary" onClick={publicarNoticia}>Publicar</button>
           </div>
@@ -2042,8 +2463,22 @@ function PanelDocente({ token }) {
                       {n.tipo === "fundamental" ? "📰 Fundamental" : "📈 Técnico"}
                     </span>
                     {n.ticker_relacionado && <span style={{ marginLeft: 6, background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>{n.ticker_relacionado}</span>}
+                    {n.sector_relacionado && <span style={{ marginLeft: 6, background: "#ede9fe", color: "#7c3aed", padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>{n.sector_relacionado}</span>}
+                    {n.impacto_pct && n.impacto_tipo && (
+                      <span style={{ marginLeft: 6, background: n.impacto_tipo === "suba" ? "#dcfce7" : "#fee2e2", color: n.impacto_tipo === "suba" ? "#166534" : "#991b1b", padding: "1px 6px", borderRadius: 4, fontSize: 11, fontWeight: 700 }}>
+                        {n.impacto_tipo === "suba" ? "▲" : "▼"} {n.impacto_pct}%
+                      </span>
+                    )}
                     <div style={{ fontWeight: 600, marginTop: 4 }}>{n.titulo}</div>
-                    <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>{fmtFecha(n.publicado_en)} · {n.lecturas} lecturas</div>
+                    <div style={{ fontSize: 11, color: "var(--gris)", marginTop: 2 }}>
+                      {fmtFecha(n.publicado_en)}
+                      {n.duracion_horas && <span style={{ marginLeft: 6 }}>· ⏱ {n.duracion_horas}h</span>}
+                      {n.expira_en && <span style={{ marginLeft: 4, color: n.vigente ? "#d97706" : "#9ca3af" }}>
+                        {n.vigente ? `expira ${fmtFecha(n.expira_en)}` : "⛔ expirada"}
+                      </span>}
+                      <span style={{ marginLeft: 6 }}>· {n.lecturas} lecturas</span>
+                      {!n.vigente && n.activa && <span style={{ marginLeft: 6, background: "#f3f4f6", color: "#6b7280", fontSize: 10, padding: "1px 5px", borderRadius: 3 }}>INACTIVA</span>}
+                    </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, marginLeft: 12 }}>
                     <button className="btn btn-outline btn-sm" onClick={() => verReporteNoticia(n.id)}>Ver reporte</button>
@@ -2208,8 +2643,9 @@ function PanelDocente({ token }) {
                     padding: "12px 16px",
                     background: b.advertencia_perfil ? "#fef3c7" : "var(--fondo, #f9fafb)",
                   }}>
+                    {/* Encabezado */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>{b.grupo}</span>
                         <span style={{
                           fontWeight: 600, fontSize: 12,
@@ -2221,9 +2657,65 @@ function PanelDocente({ token }) {
                       </div>
                       <span style={{ fontSize: 11, color: "var(--gris)" }}>{fmtFecha(b.timestamp)}</span>
                     </div>
-                    <p style={{ margin: 0, fontSize: 13, color: "var(--texto)", fontStyle: "italic" }}>
-                      "{b.justificacion}"
-                    </p>
+
+                    {/* Justificación del alumno */}
+                    {b.justificacion ? (
+                      <p style={{ margin: "0 0 10px 0", fontSize: 13, color: "var(--texto)", fontStyle: "italic" }}>
+                        "{b.justificacion}"
+                      </p>
+                    ) : (
+                      <p style={{ margin: "0 0 10px 0", fontSize: 12, color: "#9ca3af", fontStyle: "italic" }}>Sin justificación registrada</p>
+                    )}
+
+                    {/* Señales técnicas al momento de operar */}
+                    {b.snapshot_indicadores && b.snapshot_indicadores.seniales && Object.keys(b.snapshot_indicadores.seniales).length > 0 && (
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--gris)", marginBottom: 4 }}>📈 Señales técnicas al operar:</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          {Object.entries(b.snapshot_indicadores.seniales).map(([k, v]) => {
+                            const esAlcista = v.toLowerCase().includes("alcist") || v.toLowerCase().includes("golden") || v.toLowerCase().includes("positiv");
+                            const esBajista = v.toLowerCase().includes("bajist") || v.toLowerCase().includes("death") || v.toLowerCase().includes("negativ");
+                            const esSobreventa = v.toLowerCase().includes("sobreventa");
+                            const esSobrecompra = v.toLowerCase().includes("sobrecompra");
+                            const color = esSobreventa || esAlcista ? "#15803d"
+                                        : esSobrecompra || esBajista ? "#dc2626"
+                                        : "#6b7280";
+                            return (
+                              <span key={k} style={{ fontSize: 11, color, background: color + "10", borderRadius: 4, padding: "2px 7px", display: "inline-block", width: "fit-content" }}>
+                                {v}
+                              </span>
+                            );
+                          })}
+                          {b.snapshot_indicadores.rsi14 != null && (
+                            <span style={{ fontSize: 11, color: "#6b7280" }}>
+                              Valores — RSI: {b.snapshot_indicadores.rsi14?.toFixed(1)}
+                              {b.snapshot_indicadores.ema20 != null && ` · EMA20: ${fmt(b.snapshot_indicadores.ema20)}`}
+                              {b.snapshot_indicadores.ema50 != null && ` · EMA50: ${fmt(b.snapshot_indicadores.ema50)}`}
+                              {b.snapshot_indicadores.macd_histo != null && ` · MACD histo: ${b.snapshot_indicadores.macd_histo.toFixed(4)}`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Noticias activas al momento de operar */}
+                    {b.noticias_activas && b.noticias_activas.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--gris)", marginBottom: 4 }}>📰 Noticias activas al operar:</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          {b.noticias_activas.map(n => (
+                            <span key={n.id} style={{
+                              fontSize: 11, color: "#1e40af",
+                              background: "#eff6ff", borderRadius: 4, padding: "2px 7px",
+                              display: "inline-block", width: "fit-content",
+                            }}>
+                              {n.tipo === "tecnico" ? "📊" : "📰"} {n.titulo}
+                              {n.ticker_relacionado && <span style={{ color: "#6b7280" }}> ({n.ticker_relacionado})</span>}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
             </div>
