@@ -15,6 +15,8 @@ from models import (
 )
 from auth import get_current_grupo
 from perfil_riesgo import PREGUNTAS, calcular_perfil, validar_coherencia
+from indicadores import snapshot as calcular_snapshot
+from models import HistorialPrecios
 
 router = APIRouter(prefix="/api/grupos", tags=["grupos"])
 
@@ -367,14 +369,45 @@ def ejecutar_operacion(
         )
         advertencia_perfil = not coherente
 
-    # Noticia vigente más reciente
     ahora = datetime.utcnow()
+
+    # Noticia vigente más reciente (para FK legacy)
     noticia_vigente = (
         db.query(Noticia)
         .filter(Noticia.publicado_en <= ahora, Noticia.activa == True)
         .order_by(Noticia.publicado_en.desc())
         .first()
     )
+
+    # Todas las noticias activas al momento de la operación
+    todas_noticias_activas = (
+        db.query(Noticia)
+        .filter(Noticia.publicado_en <= ahora, Noticia.activa == True)
+        .order_by(Noticia.publicado_en.desc())
+        .all()
+    )
+    noticias_activas_snap = [
+        {
+            "id": n.id,
+            "titulo": n.titulo,
+            "tipo": n.tipo,
+            "ticker_relacionado": n.ticker_relacionado,
+            "publicado_en": n.publicado_en.isoformat(),
+        }
+        for n in todas_noticias_activas
+    ]
+
+    # Snapshot de indicadores técnicos del instrumento al momento de operar
+    # Usamos los últimos 120 puntos del historial (sesión + algo de semana)
+    ultimos_precios = (
+        db.query(HistorialPrecios)
+        .filter(HistorialPrecios.instrumento_id == body.instrumento_id)
+        .order_by(HistorialPrecios.timestamp.desc())
+        .limit(120)
+        .all()
+    )
+    precios_lista = [p.precio for p in reversed(ultimos_precios)]
+    indicadores_snap = calcular_snapshot(precios_lista)
 
     # Ejecutar
     if body.tipo == "compra":
@@ -415,6 +448,8 @@ def ejecutar_operacion(
         noticia_id=noticia_vigente.id if noticia_vigente else None,
         advertencia_perfil=advertencia_perfil,
         justificacion=body.justificacion,
+        snapshot_indicadores=indicadores_snap,
+        noticias_activas=noticias_activas_snap,
     )
     db.add(op)
 

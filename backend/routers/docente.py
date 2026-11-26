@@ -326,6 +326,8 @@ def reporte_operaciones(
             "advertencia_perfil": o.advertencia_perfil,
             "noticia": {"id": o.noticia.id, "titulo": o.noticia.titulo} if o.noticia else None,
             "justificacion": o.justificacion,
+            "snapshot_indicadores": o.snapshot_indicadores,
+            "noticias_activas": o.noticias_activas,
             "timestamp": o.timestamp.isoformat(),
         }
         for o in ops
@@ -377,8 +379,9 @@ def reporte_bitacoras(
     db: Session = Depends(get_db),
     _=Depends(get_current_docente)
 ):
-    """Bitácora de decisiones: todas las justificaciones de operaciones, ordenadas por grupo y fecha."""
-    q = db.query(Operacion).filter(Operacion.justificacion != None)
+    """Bitácora de decisiones: todas las justificaciones de operaciones, ordenadas por grupo y fecha.
+    Incluye snapshot de indicadores técnicos y noticias activas al momento de cada operación."""
+    q = db.query(Operacion)
     if grupo_id:
         q = q.filter(Operacion.grupo_id == grupo_id)
     ops = q.order_by(Operacion.grupo_id, Operacion.timestamp).all()
@@ -387,12 +390,15 @@ def reporte_bitacoras(
             "id": o.id,
             "grupo": o.grupo.nombre,
             "instrumento": o.instrumento.ticker,
+            "nombre_instrumento": o.instrumento.nombre,
             "tipo": o.tipo,
             "cantidad": o.cantidad,
             "precio": o.precio,
             "monto_total": o.monto_total,
             "justificacion": o.justificacion,
             "advertencia_perfil": o.advertencia_perfil,
+            "snapshot_indicadores": o.snapshot_indicadores,
+            "noticias_activas": o.noticias_activas,
             "timestamp": o.timestamp.isoformat(),
         }
         for o in ops

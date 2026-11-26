@@ -2554,8 +2554,9 @@ function PanelDocente({ token }) {
                     padding: "12px 16px",
                     background: b.advertencia_perfil ? "#fef3c7" : "var(--fondo, #f9fafb)",
                   }}>
+                    {/* Encabezado */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>{b.grupo}</span>
                         <span style={{
                           fontWeight: 600, fontSize: 12,
@@ -2567,9 +2568,65 @@ function PanelDocente({ token }) {
                       </div>
                       <span style={{ fontSize: 11, color: "var(--gris)" }}>{fmtFecha(b.timestamp)}</span>
                     </div>
-                    <p style={{ margin: 0, fontSize: 13, color: "var(--texto)", fontStyle: "italic" }}>
-                      "{b.justificacion}"
-                    </p>
+
+                    {/* Justificación del alumno */}
+                    {b.justificacion ? (
+                      <p style={{ margin: "0 0 10px 0", fontSize: 13, color: "var(--texto)", fontStyle: "italic" }}>
+                        "{b.justificacion}"
+                      </p>
+                    ) : (
+                      <p style={{ margin: "0 0 10px 0", fontSize: 12, color: "#9ca3af", fontStyle: "italic" }}>Sin justificación registrada</p>
+                    )}
+
+                    {/* Señales técnicas al momento de operar */}
+                    {b.snapshot_indicadores && b.snapshot_indicadores.seniales && Object.keys(b.snapshot_indicadores.seniales).length > 0 && (
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--gris)", marginBottom: 4 }}>📈 Señales técnicas al operar:</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          {Object.entries(b.snapshot_indicadores.seniales).map(([k, v]) => {
+                            const esAlcista = v.toLowerCase().includes("alcist") || v.toLowerCase().includes("golden") || v.toLowerCase().includes("positiv");
+                            const esBajista = v.toLowerCase().includes("bajist") || v.toLowerCase().includes("death") || v.toLowerCase().includes("negativ");
+                            const esSobreventa = v.toLowerCase().includes("sobreventa");
+                            const esSobrecompra = v.toLowerCase().includes("sobrecompra");
+                            const color = esSobreventa || esAlcista ? "#15803d"
+                                        : esSobrecompra || esBajista ? "#dc2626"
+                                        : "#6b7280";
+                            return (
+                              <span key={k} style={{ fontSize: 11, color, background: color + "10", borderRadius: 4, padding: "2px 7px", display: "inline-block", width: "fit-content" }}>
+                                {v}
+                              </span>
+                            );
+                          })}
+                          {b.snapshot_indicadores.rsi14 != null && (
+                            <span style={{ fontSize: 11, color: "#6b7280" }}>
+                              Valores — RSI: {b.snapshot_indicadores.rsi14?.toFixed(1)}
+                              {b.snapshot_indicadores.ema20 != null && ` · EMA20: ${fmt(b.snapshot_indicadores.ema20)}`}
+                              {b.snapshot_indicadores.ema50 != null && ` · EMA50: ${fmt(b.snapshot_indicadores.ema50)}`}
+                              {b.snapshot_indicadores.macd_histo != null && ` · MACD histo: ${b.snapshot_indicadores.macd_histo.toFixed(4)}`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Noticias activas al momento de operar */}
+                    {b.noticias_activas && b.noticias_activas.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--gris)", marginBottom: 4 }}>📰 Noticias activas al operar:</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          {b.noticias_activas.map(n => (
+                            <span key={n.id} style={{
+                              fontSize: 11, color: "#1e40af",
+                              background: "#eff6ff", borderRadius: 4, padding: "2px 7px",
+                              display: "inline-block", width: "fit-content",
+                            }}>
+                              {n.tipo === "tecnico" ? "📊" : "📰"} {n.titulo}
+                              {n.ticker_relacionado && <span style={{ color: "#6b7280" }}> ({n.ticker_relacionado})</span>}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
             </div>

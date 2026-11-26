@@ -131,6 +131,8 @@ class Operacion(Base):
     noticia_id = Column(Integer, ForeignKey("noticias.id"), nullable=True)  # noticia vigente al operar
     advertencia_perfil = Column(Boolean, default=False)  # si disparó advertencia
     justificacion = Column(Text, nullable=True)           # razón de la operación (bitácora)
+    snapshot_indicadores = Column(JSON, nullable=True)    # snapshot de indicadores técnicos al operar
+    noticias_activas = Column(JSON, nullable=True)        # lista de noticias activas al operar
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     grupo = relationship("Grupo", back_populates="operaciones")
@@ -254,6 +256,8 @@ def init_db():
         "ALTER TABLE configuracion ADD COLUMN fecha_inicio DATETIME",
         "ALTER TABLE configuracion ADD COLUMN fecha_fin DATETIME",
         "ALTER TABLE operaciones ADD COLUMN justificacion TEXT",
+        "ALTER TABLE operaciones ADD COLUMN snapshot_indicadores JSON",
+        "ALTER TABLE operaciones ADD COLUMN noticias_activas JSON",
     ]
     with engine.connect() as conn:
         for sql in migrations:
