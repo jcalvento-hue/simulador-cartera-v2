@@ -1751,6 +1751,8 @@ function PanelDocente({ token }) {
   // Formularios
   const [nuevoGrupo, setNuevoGrupo] = useState("");
   const [nuevaNoticia, setNuevaNot] = useState({ titulo: "", contenido: "", tipo: "fundamental", ticker_relacionado: "", sector_relacionado: "", publicado_en: "", duracion_horas: "", impacto_pct: "", impacto_tipo: "suba" });
+  const [generandoIA, setGenerandoIA] = useState(false);
+  const [precioObjetivo, setPrecioObjetivo] = useState("");
   const [csvFile, setCsvFile] = useState(null);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
@@ -1969,6 +1971,59 @@ function PanelDocente({ token }) {
       setAlumnos(al);
     } catch (e) { flash("error", e.message); }
     finally { setLoading(false); setCsvFile(null); }
+  }
+
+  async function generarConIA() {
+    const ticker = nuevaNoticia.ticker_relacionado;
+    const sector = nuevaNoticia.sector_relacionado;
+    if (!ticker && !sector) {
+      flash("error", "Seleccioná un ticker o sector antes de generar con IA.");
+      return;
+    }
+    if (!precioObjetivo || isNaN(parseFloat(precioObjetivo))) {
+      flash("error", "Ingresá un precio objetivo válido.");
+      return;
+    }
+    // Buscar precio actual del instrumento seleccionado
+    let precioActual = null;
+    let nombreInstr = null;
+    if (ticker) {
+      const instr = instrumentos.find(i => i.ticker === ticker);
+      if (!instr) { flash("error", "No se encontró el instrumento."); return; }
+      precioActual = instr.precio_actual;
+      nombreInstr = instr.nombre;
+    } else {
+      // Para sector: usar precio promedio de los instrumentos del sector
+      const del_sector = instrumentos.filter(i => i.sector === sector && i.precio_actual);
+      if (!del_sector.length) { flash("error", "No hay instrumentos con precio en ese sector."); return; }
+      precioActual = del_sector.reduce((s, i) => s + i.precio_actual, 0) / del_sector.length;
+      nombreInstr = sector;
+    }
+    setGenerandoIA(true);
+    try {
+      const durH = nuevaNoticia.duracion_horas ? parseFloat(nuevaNoticia.duracion_horas) : 2.0;
+      const result = await api("POST", "/api/docente/noticias/generar-ia", {
+        ticker: ticker || null,
+        sector: sector || null,
+        nombre_instrumento: nombreInstr,
+        precio_actual: precioActual,
+        precio_objetivo: parseFloat(precioObjetivo),
+        duracion_horas: durH,
+      }, token);
+      setNuevaNot(p => ({
+        ...p,
+        titulo: result.titulo,
+        contenido: result.contenido,
+        impacto_pct: String(result.impacto_pct),
+        impacto_tipo: result.impacto_tipo,
+        duracion_horas: p.duracion_horas || "2",
+      }));
+      flash("success", `✨ Noticia generada. Variación implícita: ${result.delta_pct > 0 ? "+" : ""}${result.delta_pct}%`);
+    } catch (e) {
+      flash("error", e.message);
+    } finally {
+      setGenerandoIA(false);
+    }
   }
 
   async function publicarNoticia() {
@@ -2396,6 +2451,45 @@ function PanelDocente({ token }) {
                 </select>
               </div>
             </div>
+            {/* Generador con IA */}
+            <div style={{ background: "linear-gradient(135deg, #ede9fe 0%, #dbeafe 100%)", borderRadius: 8, padding: "12px 14px", marginBottom: 12, border: "1px solid #c4b5fd" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9", marginBottom: 8 }}>✨ Generar con IA</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "flex-end" }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ color: "#5b21b6" }}>Precio objetivo</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={precioObjetivo}
+                    onChange={e => setPrecioObjetivo(e.target.value)}
+                    placeholder={
+                      nuevaNoticia.ticker_relacionado
+                        ? (() => { const i = instrumentos.find(x => x.ticker === nuevaNoticia.ticker_relacionado); return i ? `Actual: $${i.precio_actual?.toLocaleString("es-AR")}` : "Precio objetivo"; })()
+                        : "Seleccioná ticker primero"
+                    }
+                  />
+                </div>
+                <button
+                  className="btn btn-primary"
+                  style={{ background: "#7c3aed", borderColor: "#7c3aed", whiteSpace: "nowrap" }}
+                  onClick={generarConIA}
+                  disabled={generandoIA}
+                >
+                  {generandoIA ? "⏳ Generando..." : "✨ Generar noticia"}
+                </button>
+              </div>
+              {nuevaNoticia.ticker_relacionado && instrumentos.find(i => i.ticker === nuevaNoticia.ticker_relacionado) && (
+                <div style={{ fontSize: 11, color: "#6d28d9", marginTop: 6 }}>
+                  Precio actual de {nuevaNoticia.ticker_relacionado}: ${instrumentos.find(i => i.ticker === nuevaNoticia.ticker_relacionado)?.precio_actual?.toLocaleString("es-AR")}
+                  {precioObjetivo && !isNaN(parseFloat(precioObjetivo)) && (() => {
+                    const pa = instrumentos.find(i => i.ticker === nuevaNoticia.ticker_relacionado)?.precio_actual;
+                    const po = parseFloat(precioObjetivo);
+                    const d = pa ? ((po / pa - 1) * 100).toFixed(1) : null;
+                    return d ? <span style={{ marginLeft: 8, fontWeight: 700, color: parseFloat(d) >= 0 ? "#059669" : "#dc2626" }}>{parseFloat(d) >= 0 ? "▲" : "▼"} {Math.abs(parseFloat(d))}%</span> : null;
+                  })()}
+                </div>
+              )}
+            </div>
+
             <div className="form-group">
               <label className="form-label">Título</label>
               <input value={nuevaNoticia.titulo}

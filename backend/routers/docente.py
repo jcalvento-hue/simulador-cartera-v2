@@ -1,5 +1,5 @@
 """Router del docente — gestión de alumnos, grupos, noticias, reportes"""
-import csv, io, secrets, string
+import csv, io, secrets, string, os
 from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -822,3 +822,92 @@ def update_config(body: ConfigIn, db: Session = Depends(get_db), _=Depends(get_c
         generar_historial_inicial(db=db, horas=2.0)
 
     return {"ok": True}
+
+
+# ── Generador de noticias con IA ─────────────────────────────────────────────
+
+class GenerarNoticiaBody(BaseModel):
+    ticker: Optional[str] = None
+    sector: Optional[str] = None
+    nombre_instrumento: Optional[str] = None
+    precio_actual: float
+    precio_objetivo: float
+    duracion_horas: Optional[float] = 2.0
+
+
+@router.post("/noticias/generar-ia")
+def generar_noticia_ia(
+    body: GenerarNoticiaBody,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_docente)
+):
+    """
+    Llama a Claude para generar título y contenido de una noticia de mercado
+    coherente con el movimiento de precio implícito (precio_actual → precio_objetivo).
+    Calcula automáticamente impacto_pct e impacto_tipo.
+    Requiere variable de entorno ANTHROPIC_API_KEY.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(503, "ANTHROPIC_API_KEY no configurada en el servidor")
+
+    try:
+        import anthropic
+    except ImportError:
+        raise HTTPException(503, "Librería anthropic no instalada. Verificá requirements.txt.")
+
+    # Calcular impacto
+    delta_pct = round((body.precio_objetivo / body.precio_actual - 1) * 100, 2)
+    impacto_tipo = "suba" if delta_pct > 0 else "baja"
+    impacto_pct = abs(round(delta_pct, 2))
+
+    # Contexto del instrumento
+    activo = body.ticker or body.sector or "el mercado"
+    nombre = body.nombre_instrumento or activo
+    direccion = "alcista" if delta_pct > 0 else "bajista"
+    magnitud = "leve" if impacto_pct < 3 else ("moderada" if impacto_pct < 8 else "significativa")
+
+    prompt = f"""Sos un analista de mercados financieros argentino. Generá una noticia breve y realista para un simulador universitario de inversión.
+
+Parámetros:
+- Instrumento: {nombre} ({activo})
+- Precio actual: ${body.precio_actual:,.2f}
+- Precio objetivo: ${body.precio_objetivo:,.2f}
+- Variación esperada: {'+' if delta_pct > 0 else ''}{delta_pct:.1f}%
+- Dirección: {direccion}
+- Magnitud: {magnitud}
+- Duración del efecto: {body.duracion_horas} horas
+
+Generá exactamente este JSON (sin markdown, sin explicaciones):
+{{
+  "titulo": "<título periodístico, máximo 12 palabras>",
+  "contenido": "<3 párrafos cortos con análisis fundamental o técnico coherente con el movimiento de precio. Mencioná factores plausibles: resultados, macro, sector, contexto argentino. Lenguaje profesional pero accesible para estudiantes universitarios de finanzas.>"
+}}"""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = message.content[0].text.strip()
+
+        # Parsear JSON de la respuesta
+        import json, re
+        # Extraer JSON si viene envuelto en markdown
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not match:
+            raise ValueError("Respuesta sin JSON válido")
+        data = json.loads(match.group())
+
+        return {
+            "titulo": data.get("titulo", ""),
+            "contenido": data.get("contenido", ""),
+            "impacto_pct": impacto_pct,
+            "impacto_tipo": impacto_tipo,
+            "delta_pct": delta_pct,
+        }
+
+    except Exception as e:
+        raise HTTPException(500, f"Error generando noticia con IA: {str(e)}")
