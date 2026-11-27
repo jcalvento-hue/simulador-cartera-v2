@@ -1015,121 +1015,81 @@ _YAHOO_TICKER_MAP = {
 }
 
 
-def _fetch_ratios_yfinance(ticker_sim: str, tipo: str) -> dict:
+def _fetch_ratios_fmp(ticker_sim: str, tipo: str) -> dict:
     """
-    Obtiene ratios fundamentales de Yahoo Finance.
-    Intenta primero con yfinance, luego con requests+crumb directo.
-    Retorna dict vacío si no hay datos o si es bono/FCI.
+    Obtiene ratios fundamentales desde Financial Modeling Prep (FMP).
+    Requiere variable de entorno FMP_API_KEY.
+    Plan gratuito: 250 req/día, soporta tickers .BA y US.
     """
     if tipo in ("bono", "fci"):
         return {}
 
-    yahoo_ticker = _YAHOO_TICKER_MAP.get(ticker_sim)
-    if not yahoo_ticker:
-        yahoo_ticker = f"{ticker_sim}.BA"
+    api_key = os.environ.get("FMP_API_KEY", "")
+    if not api_key:
+        return {"error": "FMP_API_KEY no configurada"}
+
+    fmp_ticker = _YAHOO_TICKER_MAP.get(ticker_sim)
+    if not fmp_ticker:
+        fmp_ticker = f"{ticker_sim}.BA"
+    # FMP usa BRK-B igual que Yahoo
+    # Los tickers .BA funcionan directamente en FMP
 
     def _fmt(val, decimals=2):
-        if val is None or val == "N/A":
+        if val is None:
             return None
         try:
             return round(float(val), decimals)
         except Exception:
             return None
 
-    def _build_ratios_from_info(info: dict) -> dict:
-        ratios = {
-            "pe":              _fmt(info.get("trailingPE")),
-            "pe_forward":      _fmt(info.get("forwardPE")),
-            "pb":              _fmt(info.get("priceToBook")),
-            "roe":             _fmt(info.get("returnOnEquity"), 4),
-            "roa":             _fmt(info.get("returnOnAssets"), 4),
-            "ev_ebitda":       _fmt(info.get("enterpriseToEbitda")),
-            "deuda_ebitda":    _fmt(info.get("debtToEquity")),
-            "div_yield":       _fmt(info.get("dividendYield"), 4),
-            "market_cap":      _fmt(info.get("marketCap"), 0),
-            "earnings_growth": _fmt(info.get("earningsGrowth"), 4),
-            "revenue_growth":  _fmt(info.get("revenueGrowth"), 4),
-            "yahoo_ticker":    yahoo_ticker,
-        }
-        return {k: v for k, v in ratios.items() if v is not None}
-
-    # Intento 1: yfinance con fast_info (menos sub-requests, más tolerante a 429)
-    try:
-        import yfinance as yf
-        t = yf.Ticker(yahoo_ticker)
-        info = t.info
-        if info and len(info) > 5:  # info válido tiene muchos campos
-            result = _build_ratios_from_info(info)
-            if len(result) > 1:  # más que solo yahoo_ticker
-                return result
-    except Exception:
-        pass
-
-    # Intento 2: requests directo con crumb (browser-like)
     try:
         import requests
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "application/json,text/plain,*/*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Origin": "https://finance.yahoo.com",
-            "Referer": "https://finance.yahoo.com/",
-        })
-        # Cookie
-        session.get("https://fc.yahoo.com", timeout=10)
-        # Crumb
-        crumb_resp = session.get(
-            "https://query1.finance.yahoo.com/v1/test/getcrumb",
-            timeout=10
+
+        # Endpoint: key-metrics-ttm (trailing twelve months)
+        url_metrics = (
+            f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{fmp_ticker}"
+            f"?apikey={api_key}"
         )
-        crumb = crumb_resp.text.strip()
-        if not crumb or "<" in crumb or len(crumb) > 50:
-            return {"error": "crumb inválido de Yahoo Finance"}
-
-        modules = "financialData,defaultKeyStatistics,summaryDetail"
-        url = (
-            f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{yahoo_ticker}"
-            f"?modules={modules}&crumb={crumb}&corsDomain=finance.yahoo.com"
+        # Endpoint: ratios-ttm
+        url_ratios = (
+            f"https://financialmodelingprep.com/api/v3/ratios-ttm/{fmp_ticker}"
+            f"?apikey={api_key}"
         )
-        resp = session.get(url, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
 
-        result = data.get("quoteSummary", {}).get("result")
-        if not result:
-            return {"error": "sin resultado en quoteSummary"}
-        r = result[0]
+        r_metrics = requests.get(url_metrics, timeout=15)
+        r_ratios  = requests.get(url_ratios,  timeout=15)
 
-        fd = r.get("financialData", {})
-        ks = r.get("defaultKeyStatistics", {})
-        sd = r.get("summaryDetail", {})
+        metrics = r_metrics.json()[0] if r_metrics.ok and r_metrics.json() else {}
+        ratios_raw = r_ratios.json()[0] if r_ratios.ok and r_ratios.json() else {}
 
-        def _raw(d, key):
-            v = d.get(key)
-            if isinstance(v, dict):
-                return v.get("raw")
-            return v
-
-        ratios = {
-            "pe":              _fmt(_raw(sd, "trailingPE")),
-            "pe_forward":      _fmt(_raw(ks, "forwardPE")),
-            "pb":              _fmt(_raw(ks, "priceToBook")),
-            "roe":             _fmt(_raw(fd, "returnOnEquity"), 4),
-            "roa":             _fmt(_raw(fd, "returnOnAssets"), 4),
-            "ev_ebitda":       _fmt(_raw(ks, "enterpriseToEbitda")),
-            "deuda_ebitda":    _fmt(_raw(fd, "debtToEquity")),
-            "div_yield":       _fmt(_raw(sd, "dividendYield"), 4),
-            "market_cap":      _fmt(_raw(sd, "marketCap"), 0),
-            "earnings_growth": _fmt(_raw(fd, "earningsGrowth"), 4),
-            "revenue_growth":  _fmt(_raw(fd, "revenueGrowth"), 4),
-            "yahoo_ticker":    yahoo_ticker,
+        result = {
+            "pe":              _fmt(ratios_raw.get("peRatioTTM")),
+            "pe_forward":      None,  # FMP no tiene forward PE en plan gratuito
+            "pb":              _fmt(ratios_raw.get("priceToBookRatioTTM")),
+            "roe":             _fmt(ratios_raw.get("returnOnEquityTTM"), 4),
+            "roa":             _fmt(ratios_raw.get("returnOnAssetsTTM"), 4),
+            "ev_ebitda":       _fmt(metrics.get("evToOperatingCashFlowTTM")),  # aproximación
+            "deuda_ebitda":    _fmt(ratios_raw.get("debtEquityRatioTTM")),
+            "div_yield":       _fmt(ratios_raw.get("dividendYieldTTM"), 4),
+            "market_cap":      _fmt(metrics.get("marketCapTTM"), 0),
+            "earnings_growth": _fmt(ratios_raw.get("netProfitMarginTTM"), 4),
+            "revenue_growth":  None,
+            "fmp_ticker":      fmp_ticker,
         }
-        return {k: v for k, v in ratios.items() if v is not None}
+        # Filtrar nulos
+        result = {k: v for k, v in result.items() if v is not None}
+
+        if len(result) <= 1:
+            return {"error": f"FMP sin datos para {fmp_ticker}"}
+        return result
 
     except Exception as e:
         return {"error": str(e)[:200]}
+
+
+# Alias para compatibilidad con el resto del código
+def _fetch_ratios_yfinance(ticker_sim: str, tipo: str) -> dict:
+    return _fetch_ratios_fmp(ticker_sim, tipo)
 
 
 def _tarea_actualizar_ratios():
