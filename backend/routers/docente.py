@@ -2,7 +2,7 @@
 import csv, io, secrets, string, os
 from datetime import datetime
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -1062,40 +1062,52 @@ def _fetch_ratios_yfinance(ticker_sim: str, tipo: str) -> dict:
         return {"error": str(e)[:200]}
 
 
+def _tarea_actualizar_ratios():
+    """
+    Corre en background: actualiza ratios de todos los instrumentos activos
+    con pausas entre requests para evitar el rate limit de Yahoo Finance.
+    """
+    import time
+    from datetime import datetime as dt
+    from models import get_db as _get_db
+    db = next(_get_db())
+    try:
+        instrumentos = db.query(Instrumento).filter(Instrumento.activo == True).all()
+        for inst in instrumentos:
+            if inst.tipo in ("bono", "fci"):
+                continue
+            time.sleep(2.5)
+            ratios = _fetch_ratios_yfinance(inst.ticker, inst.tipo)
+            if ratios.get("error", "").startswith("429"):
+                time.sleep(12)
+                ratios = _fetch_ratios_yfinance(inst.ticker, inst.tipo)
+            inst.ratios_json = ratios
+            inst.ratios_actualizados_en = dt.utcnow()
+            db.add(inst)
+            db.commit()
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
 @router.post("/actualizar-ratios")
 def actualizar_ratios(
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _=Depends(get_current_docente)
 ):
     """
-    Actualiza los ratios fundamentales de todos los instrumentos activos
-    consultando Yahoo Finance. Guarda en DB con timestamp.
-    Bonos y FCI se omiten (sin ratios de equity).
+    Dispara la actualización de ratios fundamentales en background
+    para no bloquear el request (Yahoo Finance requiere pausas entre calls).
     """
-    from datetime import datetime as dt
+    background_tasks.add_task(_tarea_actualizar_ratios)
     instrumentos = db.query(Instrumento).filter(Instrumento.activo == True).all()
-    resultados = []
-
-    for inst in instrumentos:
-        if inst.tipo in ("bono", "fci"):
-            resultados.append({"ticker": inst.ticker, "tipo": inst.tipo, "estado": "omitido"})
-            continue
-
-        ratios = _fetch_ratios_yfinance(inst.ticker, inst.tipo)
-        inst.ratios_json = ratios
-        inst.ratios_actualizados_en = dt.utcnow()
-        db.add(inst)
-
-        estado = "error" if "error" in ratios else ("sin_datos" if not ratios else "ok")
-        resultados.append({
-            "ticker": inst.ticker,
-            "tipo": inst.tipo,
-            "estado": estado,
-            "ratios": ratios,
-        })
-
-    db.commit()
-    return {"actualizados": len(resultados), "detalle": resultados}
+    equity = [i.ticker for i in instrumentos if i.tipo not in ("bono", "fci")]
+    return {
+        "mensaje": f"Actualización iniciada en background para {len(equity)} instrumentos. Tomará ~{len(equity)*3} segundos.",
+        "instrumentos": equity,
+    }
 
 
 @router.get("/ratios/{instrumento_id}")

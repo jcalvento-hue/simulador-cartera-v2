@@ -3171,12 +3171,8 @@ function PanelDocente({ token }) {
               <button className="btn btn-sm btn-outline" style={{ fontSize: 12 }}
                 onClick={async () => {
                   try {
-                    flash("info", "Actualizando ratios fundamentales desde Yahoo Finance...");
                     const r = await api("POST", "/api/docente/actualizar-ratios", null, token);
-                    const ok = r.detalle?.filter(d => d.estado === "ok").length || 0;
-                    const err = r.detalle?.filter(d => d.estado === "error").length || 0;
-                    const omit = r.detalle?.filter(d => d.estado === "omitido").length || 0;
-                    flash("success", `Ratios actualizados: ${ok} OK · ${err} error · ${omit} omitidos`);
+                    flash("success", r.mensaje || "Actualización de ratios iniciada en background.");
                   } catch (e) {
                     flash("error", `Error al actualizar ratios: ${e.message}`);
                   }
