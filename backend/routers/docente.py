@@ -1017,7 +1017,8 @@ _YAHOO_TICKER_MAP = {
 
 def _fetch_ratios_yfinance(ticker_sim: str, tipo: str) -> dict:
     """
-    Consulta Yahoo Finance con headers de browser para evitar rate-limit.
+    Obtiene ratios fundamentales de Yahoo Finance.
+    Intenta primero con yfinance, luego con requests+crumb directo.
     Retorna dict vacío si no hay datos o si es bono/FCI.
     """
     if tipo in ("bono", "fci"):
@@ -1035,29 +1036,62 @@ def _fetch_ratios_yfinance(ticker_sim: str, tipo: str) -> dict:
         except Exception:
             return None
 
+    def _build_ratios_from_info(info: dict) -> dict:
+        ratios = {
+            "pe":              _fmt(info.get("trailingPE")),
+            "pe_forward":      _fmt(info.get("forwardPE")),
+            "pb":              _fmt(info.get("priceToBook")),
+            "roe":             _fmt(info.get("returnOnEquity"), 4),
+            "roa":             _fmt(info.get("returnOnAssets"), 4),
+            "ev_ebitda":       _fmt(info.get("enterpriseToEbitda")),
+            "deuda_ebitda":    _fmt(info.get("debtToEquity")),
+            "div_yield":       _fmt(info.get("dividendYield"), 4),
+            "market_cap":      _fmt(info.get("marketCap"), 0),
+            "earnings_growth": _fmt(info.get("earningsGrowth"), 4),
+            "revenue_growth":  _fmt(info.get("revenueGrowth"), 4),
+            "yahoo_ticker":    yahoo_ticker,
+        }
+        return {k: v for k, v in ratios.items() if v is not None}
+
+    # Intento 1: yfinance con fast_info (menos sub-requests, más tolerante a 429)
     try:
-        import requests, json as _json
-        # Obtener crumb + cookie como lo haría un browser
+        import yfinance as yf
+        t = yf.Ticker(yahoo_ticker)
+        info = t.info
+        if info and len(info) > 5:  # info válido tiene muchos campos
+            result = _build_ratios_from_info(info)
+            if len(result) > 1:  # más que solo yahoo_ticker
+                return result
+    except Exception:
+        pass
+
+    # Intento 2: requests directo con crumb (browser-like)
+    try:
+        import requests
         session = requests.Session()
         session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/json,text/plain,*/*",
             "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Origin": "https://finance.yahoo.com",
             "Referer": "https://finance.yahoo.com/",
         })
-        # Paso 1: obtener cookie
+        # Cookie
         session.get("https://fc.yahoo.com", timeout=10)
-        # Paso 2: obtener crumb
-        crumb_resp = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=10)
+        # Crumb
+        crumb_resp = session.get(
+            "https://query1.finance.yahoo.com/v1/test/getcrumb",
+            timeout=10
+        )
         crumb = crumb_resp.text.strip()
-        if not crumb or "<" in crumb:
-            raise Exception("No se pudo obtener crumb de Yahoo Finance")
+        if not crumb or "<" in crumb or len(crumb) > 50:
+            return {"error": "crumb inválido de Yahoo Finance"}
 
-        # Paso 3: consultar quoteSummary
         modules = "financialData,defaultKeyStatistics,summaryDetail"
         url = (
-            f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{yahoo_ticker}"
-            f"?modules={modules}&crumb={crumb}"
+            f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{yahoo_ticker}"
+            f"?modules={modules}&crumb={crumb}&corsDomain=finance.yahoo.com"
         )
         resp = session.get(url, timeout=15)
         resp.raise_for_status()
@@ -1065,7 +1099,7 @@ def _fetch_ratios_yfinance(ticker_sim: str, tipo: str) -> dict:
 
         result = data.get("quoteSummary", {}).get("result")
         if not result:
-            return {}
+            return {"error": "sin resultado en quoteSummary"}
         r = result[0]
 
         fd = r.get("financialData", {})
