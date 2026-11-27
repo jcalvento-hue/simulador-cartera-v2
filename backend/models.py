@@ -78,6 +78,8 @@ class Instrumento(Base):
     precio_sesion = Column(Float, nullable=True)         # precio al inicio de la sesión actual
     volatilidad = Column(Float, default=0.02)            # desviación estándar del random walk
     activo = Column(Boolean, default=True)
+    ratios_json = Column(JSON, nullable=True)             # {pe, pb, roe, roa, ev_ebitda, deuda_ebitda, div_yield, ...}
+    ratios_actualizados_en = Column(DateTime, nullable=True)
 
     posiciones = relationship("Posicion", back_populates="instrumento")
     operaciones = relationship("Operacion", back_populates="instrumento")
@@ -309,6 +311,8 @@ def init_db():
         "ALTER TABLE noticias ADD COLUMN impacto_tipo VARCHAR(10)",
         "ALTER TABLE noticias ADD COLUMN sector_relacionado VARCHAR(100)",
         # InformeFinal — tabla nueva, se crea con create_all; migraciones de columnas futuras irían acá
+        "ALTER TABLE instrumentos ADD COLUMN ratios_json JSON",
+        "ALTER TABLE instrumentos ADD COLUMN ratios_actualizados_en DATETIME",
     ]
     with engine.connect() as conn:
         for sql in migrations:

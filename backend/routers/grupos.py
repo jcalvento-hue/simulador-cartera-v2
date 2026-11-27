@@ -784,6 +784,25 @@ def _calcular_metricas(snapshots, capital_inicial):
     }
 
 
+@router.get("/instrumentos/{instrumento_id}/ratios")
+def get_ratios_instrumento(
+    instrumento_id: int,
+    db: Session = Depends(get_db),
+    grupo: Grupo = Depends(get_current_grupo)
+):
+    """Ratios fundamentales de un instrumento — accesible para grupos autenticados."""
+    inst = db.query(Instrumento).filter(Instrumento.id == instrumento_id).first()
+    if not inst:
+        raise HTTPException(404, "Instrumento no encontrado")
+    return {
+        "ticker": inst.ticker,
+        "nombre": inst.nombre,
+        "tipo": inst.tipo,
+        "ratios": inst.ratios_json or {},
+        "actualizados_en": inst.ratios_actualizados_en.isoformat() if inst.ratios_actualizados_en else None,
+    }
+
+
 @router.get("/metricas")
 def get_metricas(db: Session = Depends(get_db), grupo: Grupo = Depends(get_current_grupo)):
     """Métricas de riesgo del grupo: Sharpe ratio, máximo drawdown, volatilidad."""

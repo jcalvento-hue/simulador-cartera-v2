@@ -983,3 +983,133 @@ def generar_noticia_ia(
         "impacto_tipo": impacto_tipo,
         "delta_pct": delta_pct,
     }
+
+
+# ── Ratios fundamentales ──────────────────────────────────────────────────────
+
+# Mapeo ticker simulador → ticker Yahoo Finance
+_YAHOO_TICKER_MAP = {
+    # Acciones locales (panel BCBA)
+    "GGAL":  "GGAL.BA",
+    "YPFD":  "YPFD.BA",
+    "BMA":   "BMA.BA",
+    "PAMP":  "PAMP.BA",
+    "TXAR":  "TXAR.BA",
+    "ALUA":  "ALUA.BA",
+    "CRES":  "CRES.BA",
+    "SUPV":  "SUPV.BA",
+    "CEPU":  "CEPU.BA",
+    "LOMA":  "LOMA.BA",
+    "TECO2": "TECO2.BA",
+    "COME":  "COME.BA",
+    "EDN":   "EDN.BA",
+    "TRAN":  "TRAN.BA",
+    "VALO":  "VALO.BA",
+    # CEDEARs (tickers US directos)
+    "AAPL":  "AAPL",
+    "GOOGL": "GOOGL",
+    "AMZN":  "AMZN",
+    "MSFT":  "MSFT",
+    "TSLA":  "TSLA",
+    "BRKB":  "BRK-B",
+}
+
+
+def _fetch_ratios_yfinance(ticker_sim: str, tipo: str) -> dict:
+    """
+    Consulta Yahoo Finance y devuelve los ratios fundamentales del instrumento.
+    Retorna dict vacío si no hay datos o si es bono/FCI.
+    """
+    if tipo in ("bono", "fci"):
+        return {}
+
+    yahoo_ticker = _YAHOO_TICKER_MAP.get(ticker_sim)
+    if not yahoo_ticker:
+        # intentar con sufijo .BA para acciones no mapeadas explícitamente
+        yahoo_ticker = f"{ticker_sim}.BA"
+
+    try:
+        import yfinance as yf
+        t = yf.Ticker(yahoo_ticker)
+        info = t.info
+
+        def _fmt(val, decimals=2):
+            if val is None or val == "N/A":
+                return None
+            try:
+                return round(float(val), decimals)
+            except Exception:
+                return None
+
+        ratios = {
+            "pe":           _fmt(info.get("trailingPE")),
+            "pe_forward":   _fmt(info.get("forwardPE")),
+            "pb":           _fmt(info.get("priceToBook")),
+            "roe":          _fmt(info.get("returnOnEquity"), 4),   # fracción → se muestra *100 en frontend
+            "roa":          _fmt(info.get("returnOnAssets"), 4),
+            "ev_ebitda":    _fmt(info.get("enterpriseToEbitda")),
+            "deuda_ebitda": _fmt(info.get("debtToEquity")),        # proxy: D/E
+            "div_yield":    _fmt(info.get("dividendYield"), 4),
+            "market_cap":   _fmt(info.get("marketCap"), 0),
+            "earnings_growth": _fmt(info.get("earningsGrowth"), 4),
+            "revenue_growth":  _fmt(info.get("revenueGrowth"), 4),
+            "yahoo_ticker": yahoo_ticker,
+        }
+        # filtrar Nones para no guardar basura
+        return {k: v for k, v in ratios.items() if v is not None}
+
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
+@router.post("/actualizar-ratios")
+def actualizar_ratios(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_docente)
+):
+    """
+    Actualiza los ratios fundamentales de todos los instrumentos activos
+    consultando Yahoo Finance. Guarda en DB con timestamp.
+    Bonos y FCI se omiten (sin ratios de equity).
+    """
+    from datetime import datetime as dt
+    instrumentos = db.query(Instrumento).filter(Instrumento.activo == True).all()
+    resultados = []
+
+    for inst in instrumentos:
+        if inst.tipo in ("bono", "fci"):
+            resultados.append({"ticker": inst.ticker, "tipo": inst.tipo, "estado": "omitido"})
+            continue
+
+        ratios = _fetch_ratios_yfinance(inst.ticker, inst.tipo)
+        inst.ratios_json = ratios
+        inst.ratios_actualizados_en = dt.utcnow()
+        db.add(inst)
+
+        estado = "error" if "error" in ratios else ("sin_datos" if not ratios else "ok")
+        resultados.append({
+            "ticker": inst.ticker,
+            "tipo": inst.tipo,
+            "estado": estado,
+            "ratios": ratios,
+        })
+
+    db.commit()
+    return {"actualizados": len(resultados), "detalle": resultados}
+
+
+@router.get("/ratios/{instrumento_id}")
+def obtener_ratios_docente(
+    instrumento_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_docente)
+):
+    """Ratios de un instrumento — vista docente (con timestamp y ticker Yahoo)."""
+    inst = db.query(Instrumento).filter(Instrumento.id == instrumento_id).first()
+    if not inst:
+        raise HTTPException(404, "Instrumento no encontrado")
+    return {
+        "ticker": inst.ticker,
+        "ratios": inst.ratios_json or {},
+        "actualizados_en": inst.ratios_actualizados_en.isoformat() if inst.ratios_actualizados_en else None,
+    }
