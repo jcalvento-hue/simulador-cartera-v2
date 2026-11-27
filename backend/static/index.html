@@ -914,6 +914,9 @@ function Operar({ token, perfil }) {
   const [historialKey, setHistorialKey] = useState(0);
   const [periodo, setPeriodo] = useState("sesion");
   const [chartZoom, setChartZoom] = useState(false);
+  const [tabInstrumento, setTabInstrumento] = useState("operar");
+  const [ratiosFundamentales, setRatiosFundamentales] = useState(null);
+  const [ratiosLoading, setRatiosLoading] = useState(false);
   const chartRef = useRef(null);
   const chartInstanceRef = useRef(null);
   const chartZoomRef = useRef(null);
@@ -1208,6 +1211,19 @@ function Operar({ token, perfil }) {
     };
   }, [chartZoom, historial, periodo, indicadores]);
 
+  async function cargarRatios(instrId) {
+    setRatiosLoading(true);
+    setRatiosFundamentales(null);
+    try {
+      const data = await api("GET", `/api/grupos/instrumentos/${instrId}/ratios`, null, token);
+      setRatiosFundamentales(data);
+    } catch (e) {
+      setRatiosFundamentales({ error: e.message });
+    } finally {
+      setRatiosLoading(false);
+    }
+  }
+
   async function verPreview() {
     if (!seleccionado || !cantidad || parseInt(cantidad) <= 0) return;
     setError(""); setLoading(true);
@@ -1322,13 +1338,36 @@ function Operar({ token, perfil }) {
         }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Orden — {seleccionado.ticker}</div>
-            <button onClick={() => { setSeleccionado(null); setCantidad(""); setError(""); setPreview(null); }}
+            <button onClick={() => { setSeleccionado(null); setCantidad(""); setError(""); setPreview(null); setTabInstrumento("operar"); setRatiosFundamentales(null); }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--gris)", lineHeight: 1 }}>✕</button>
           </div>
           <div style={{ fontSize: 13, color: "var(--gris)" }}>{seleccionado.nombre}</div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>{fmt(seleccionado.precio_actual)}
             <span style={{ fontSize: 13, marginLeft: 8 }} className={seleccionado.variacion_sesion_pct >= 0 ? "pos" : "neg"}>{fmtPct(seleccionado.variacion_sesion_pct)}</span>
           </div>
+
+          {/* Tabs Operar / Fundamentos */}
+          <div style={{ display: "flex", gap: 0, borderBottom: "1.5px solid #e5e7eb" }}>
+            {[{ key: "operar", label: "Operar" }, { key: "fundamentos", label: "Fundamentos" }].map(({ key, label }) => (
+              <button key={key} onClick={() => {
+                setTabInstrumento(key);
+                if (key === "fundamentos" && !ratiosFundamentales && !ratiosLoading) cargarRatios(seleccionado.id);
+              }} style={{
+                padding: "6px 14px",
+                fontSize: 12,
+                fontWeight: tabInstrumento === key ? 700 : 400,
+                border: "none",
+                borderBottom: tabInstrumento === key ? "2.5px solid var(--azul)" : "2.5px solid transparent",
+                background: "none",
+                color: tabInstrumento === key ? "var(--azul)" : "var(--gris)",
+                cursor: "pointer",
+                marginBottom: -1.5,
+              }}>{label}</button>
+            ))}
+          </div>
+
+          {/* TAB: Operar */}
+          {tabInstrumento === "operar" && <>
           {/* Gráfico de cotización */}
           <div>
             {/* Botones de período */}
@@ -1476,6 +1515,73 @@ function Operar({ token, perfil }) {
             {loading && <span className="spinner" />}
             {tipo === "compra" ? "Ver preview compra" : "Ver preview venta"}
           </button>
+          </>}
+
+          {/* TAB: Fundamentos */}
+          {tabInstrumento === "fundamentos" && (
+            <div style={{ fontSize: 13 }}>
+              {ratiosLoading && <div style={{ color: "var(--gris)", textAlign: "center", padding: "24px 0" }}><span className="spinner" /> Cargando datos...</div>}
+              {ratiosFundamentales?.error && <div className="alert alert-warning" style={{ fontSize: 12 }}>No se pudieron obtener datos: {ratiosFundamentales.error}</div>}
+              {ratiosFundamentales && !ratiosFundamentales.error && (() => {
+                const r = ratiosFundamentales.ratios || {};
+                const tipo_inst = seleccionado?.tipo;
+                if (tipo_inst === "bono" || tipo_inst === "fci") {
+                  return <div style={{ color: "var(--gris)", fontSize: 12, textAlign: "center", padding: "20px 0" }}>Ratios fundamentales no aplican para este tipo de instrumento.</div>;
+                }
+                const noData = Object.keys(r).length === 0;
+                if (noData) return (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <div style={{ color: "var(--gris)", fontSize: 12, marginBottom: 8 }}>Sin datos disponibles en Yahoo Finance.</div>
+                    <div style={{ color: "var(--gris)", fontSize: 11 }}>El docente puede actualizarlos desde el panel de administración.</div>
+                  </div>
+                );
+                const fmtRatio = (v, pct) => v == null ? "—" : pct ? `${(v * 100).toFixed(1)}%` : v.toFixed(2);
+                const fmtCap = v => {
+                  if (!v) return "—";
+                  if (v >= 1e12) return `$${(v/1e12).toFixed(1)}T`;
+                  if (v >= 1e9) return `$${(v/1e9).toFixed(1)}B`;
+                  if (v >= 1e6) return `$${(v/1e6).toFixed(1)}M`;
+                  return `$${v.toFixed(0)}`;
+                };
+                const filas = [
+                  { label: "P/E (trailing)", val: fmtRatio(r.pe) },
+                  { label: "P/E (forward)", val: fmtRatio(r.pe_forward) },
+                  { label: "P/BV", val: fmtRatio(r.pb) },
+                  { label: "EV/EBITDA", val: fmtRatio(r.ev_ebitda) },
+                  { label: "Deuda/Equity", val: fmtRatio(r.deuda_ebitda) },
+                  { label: "ROE", val: fmtRatio(r.roe, true) },
+                  { label: "ROA", val: fmtRatio(r.roa, true) },
+                  { label: "Div. Yield", val: fmtRatio(r.div_yield, true) },
+                  { label: "Crec. Ingresos", val: fmtRatio(r.revenue_growth, true) },
+                  { label: "Crec. Ganancias", val: fmtRatio(r.earnings_growth, true) },
+                  { label: "Market Cap", val: fmtCap(r.market_cap) },
+                ].filter(f => f.val !== "—");
+                return <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px", marginBottom: 12 }}>
+                    {filas.map(({ label, val }) => (
+                      <div key={label} style={{ background: "#f8fafc", borderRadius: 6, padding: "8px 10px" }}>
+                        <div style={{ fontSize: 10, color: "var(--gris)", marginBottom: 2 }}>{label}</div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {ratiosFundamentales.actualizados_en && (
+                    <div style={{ fontSize: 10, color: "var(--gris)", textAlign: "right", marginTop: 4 }}>
+                      Fuente: Yahoo Finance · Act. {new Date(ratiosFundamentales.actualizados_en + "Z").toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "2-digit" })}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 6, lineHeight: 1.4 }}>
+                    * Datos de mercado real. No representan el precio del simulador.
+                  </div>
+                </>;
+              })()}
+              {!ratiosLoading && !ratiosFundamentales && (
+                <div style={{ textAlign: "center", padding: "20px 0" }}>
+                  <button className="btn btn-outline" style={{ fontSize: 12 }} onClick={() => cargarRatios(seleccionado.id)}>Cargar fundamentos</button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -3060,7 +3166,24 @@ function PanelDocente({ token }) {
 
           {/* Instrumentos */}
           <div className="panel-section" style={{ maxWidth: "100%" }}>
-            <div className="panel-section-title">Instrumentos disponibles</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div className="panel-section-title" style={{ marginBottom: 0 }}>Instrumentos disponibles</div>
+              <button className="btn btn-sm btn-outline" style={{ fontSize: 12 }}
+                onClick={async () => {
+                  try {
+                    flash("info", "Actualizando ratios fundamentales desde Yahoo Finance...");
+                    const r = await api("POST", "/api/docente/actualizar-ratios", null, token);
+                    const ok = r.detalle?.filter(d => d.estado === "ok").length || 0;
+                    const err = r.detalle?.filter(d => d.estado === "error").length || 0;
+                    const omit = r.detalle?.filter(d => d.estado === "omitido").length || 0;
+                    flash("success", `Ratios actualizados: ${ok} OK · ${err} error · ${omit} omitidos`);
+                  } catch (e) {
+                    flash("error", `Error al actualizar ratios: ${e.message}`);
+                  }
+                }}>
+                📊 Actualizar ratios
+              </button>
+            </div>
             <p style={{ fontSize: 12, color: "var(--gris)", marginBottom: 12 }}>
               Configurá el sector y la tendencia esperada de cada instrumento. La tendencia es el % de variación total al vencimiento (ej: +15% alcista, -8% bajista). La simulación deriva el drift por intervalo automáticamente a partir de las fechas configuradas.
             </p>
