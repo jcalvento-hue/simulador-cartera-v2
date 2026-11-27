@@ -1017,7 +1017,7 @@ _YAHOO_TICKER_MAP = {
 
 def _fetch_ratios_yfinance(ticker_sim: str, tipo: str) -> dict:
     """
-    Consulta Yahoo Finance y devuelve los ratios fundamentales del instrumento.
+    Consulta Yahoo Finance con headers de browser para evitar rate-limit.
     Retorna dict vacío si no hay datos o si es bono/FCI.
     """
     if tipo in ("bono", "fci"):
@@ -1025,37 +1025,73 @@ def _fetch_ratios_yfinance(ticker_sim: str, tipo: str) -> dict:
 
     yahoo_ticker = _YAHOO_TICKER_MAP.get(ticker_sim)
     if not yahoo_ticker:
-        # intentar con sufijo .BA para acciones no mapeadas explícitamente
         yahoo_ticker = f"{ticker_sim}.BA"
 
-    try:
-        import yfinance as yf
-        t = yf.Ticker(yahoo_ticker)
-        info = t.info
+    def _fmt(val, decimals=2):
+        if val is None or val == "N/A":
+            return None
+        try:
+            return round(float(val), decimals)
+        except Exception:
+            return None
 
-        def _fmt(val, decimals=2):
-            if val is None or val == "N/A":
-                return None
-            try:
-                return round(float(val), decimals)
-            except Exception:
-                return None
+    try:
+        import requests, json as _json
+        # Obtener crumb + cookie como lo haría un browser
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://finance.yahoo.com/",
+        })
+        # Paso 1: obtener cookie
+        session.get("https://fc.yahoo.com", timeout=10)
+        # Paso 2: obtener crumb
+        crumb_resp = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=10)
+        crumb = crumb_resp.text.strip()
+        if not crumb or "<" in crumb:
+            raise Exception("No se pudo obtener crumb de Yahoo Finance")
+
+        # Paso 3: consultar quoteSummary
+        modules = "financialData,defaultKeyStatistics,summaryDetail"
+        url = (
+            f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{yahoo_ticker}"
+            f"?modules={modules}&crumb={crumb}"
+        )
+        resp = session.get(url, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+
+        result = data.get("quoteSummary", {}).get("result")
+        if not result:
+            return {}
+        r = result[0]
+
+        fd = r.get("financialData", {})
+        ks = r.get("defaultKeyStatistics", {})
+        sd = r.get("summaryDetail", {})
+
+        def _raw(d, key):
+            v = d.get(key)
+            if isinstance(v, dict):
+                return v.get("raw")
+            return v
 
         ratios = {
-            "pe":           _fmt(info.get("trailingPE")),
-            "pe_forward":   _fmt(info.get("forwardPE")),
-            "pb":           _fmt(info.get("priceToBook")),
-            "roe":          _fmt(info.get("returnOnEquity"), 4),   # fracción → se muestra *100 en frontend
-            "roa":          _fmt(info.get("returnOnAssets"), 4),
-            "ev_ebitda":    _fmt(info.get("enterpriseToEbitda")),
-            "deuda_ebitda": _fmt(info.get("debtToEquity")),        # proxy: D/E
-            "div_yield":    _fmt(info.get("dividendYield"), 4),
-            "market_cap":   _fmt(info.get("marketCap"), 0),
-            "earnings_growth": _fmt(info.get("earningsGrowth"), 4),
-            "revenue_growth":  _fmt(info.get("revenueGrowth"), 4),
-            "yahoo_ticker": yahoo_ticker,
+            "pe":              _fmt(_raw(sd, "trailingPE")),
+            "pe_forward":      _fmt(_raw(ks, "forwardPE")),
+            "pb":              _fmt(_raw(ks, "priceToBook")),
+            "roe":             _fmt(_raw(fd, "returnOnEquity"), 4),
+            "roa":             _fmt(_raw(fd, "returnOnAssets"), 4),
+            "ev_ebitda":       _fmt(_raw(ks, "enterpriseToEbitda")),
+            "deuda_ebitda":    _fmt(_raw(fd, "debtToEquity")),
+            "div_yield":       _fmt(_raw(sd, "dividendYield"), 4),
+            "market_cap":      _fmt(_raw(sd, "marketCap"), 0),
+            "earnings_growth": _fmt(_raw(fd, "earningsGrowth"), 4),
+            "revenue_growth":  _fmt(_raw(fd, "revenueGrowth"), 4),
+            "yahoo_ticker":    yahoo_ticker,
         }
-        # filtrar Nones para no guardar basura
         return {k: v for k, v in ratios.items() if v is not None}
 
     except Exception as e:
@@ -1076,10 +1112,10 @@ def _tarea_actualizar_ratios():
         for inst in instrumentos:
             if inst.tipo in ("bono", "fci"):
                 continue
-            time.sleep(2.5)
+            time.sleep(5)
             ratios = _fetch_ratios_yfinance(inst.ticker, inst.tipo)
-            if ratios.get("error", "").startswith("429"):
-                time.sleep(12)
+            if "error" in ratios and "429" in ratios.get("error", ""):
+                time.sleep(20)
                 ratios = _fetch_ratios_yfinance(inst.ticker, inst.tipo)
             inst.ratios_json = ratios
             inst.ratios_actualizados_en = dt.utcnow()
